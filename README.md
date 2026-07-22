@@ -68,11 +68,13 @@ python -m rl.train --config configs/frozenlake_q.yaml     # Q-learning on Frozen
 python -m rl.train --config configs/cartpole_random.yaml  # random-policy pipeline check
 ```
 
-Watch a trained checkpoint play in a render window:
+Watch a trained checkpoint play in a render window, with a live step/return
+line per episode (`--episodes N`; `--fps N` for slow motion — CartPole's
+native 50 fps is over in a blink):
 
 ```
 python scripts/watch.py runs/frozenlake_q/checkpoint.pt
-python scripts/watch.py runs/cartpole_random/checkpoint.pt   # random policy flailing
+python scripts/watch.py runs/cartpole_random/checkpoint.pt --fps 15   # random policy flailing
 ```
 
 Run outputs live under `runs/<run_name>/` (gitignored), so train before watching.
