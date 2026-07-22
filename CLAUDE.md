@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-Guide for Claude Code sessions on this repo. `RL_PROJECT_HANDOFF.md` (repo root, deliberately untracked) is the founding doc — if present, read it before starting work.
+Guide for Claude Code sessions on this repo. Read `PLAN.md` at session start for current status and next steps.
 
 ## What this project is
 
@@ -34,21 +34,9 @@ From-scratch deep RL in PyTorch, built as a portfolio piece over multiple months
 - Env factory (`rl/envs/make.py`) keeps a clean seam for vectorized envs — PPO needs them in Phase 2.
 - Buffers: DQN needs a replay buffer (off-policy), PPO a rollout buffer (on-policy); `rl/buffers/base.py` must accommodate both patterns.
 
-## Roadmap and status
+## Plan and status
 
-| Phase | Deliverable | Status |
-|-------|-------------|--------|
-| 0 | Scaffold + shared harness; random agent on CartPole; tabular Q-learning on FrozenLake | scaffold committed 2026-07-21; harness not started |
-| 1 | DQN from scratch (discrete track) | not started |
-| 2 | PPO from scratch (both tracks; reference "The 37 Implementation Details of PPO") | not started |
-| 3 | SAC from scratch (continuous track) | not started |
-| 4 | Capstone (env TBD) | blocked on env decision — do not pre-build |
-
-Update the status column as work lands.
-
-## Phase 0 build order (next up)
-
-seeding → config → logger → env factory → agent interface → buffers (interface only) → eval → checkpoint → train loop, then the random agent on `CartPole-v1`, tabular Q-learning on `FrozenLake-v1` (eval return must climb above the random baseline), and the CartPole sanity test. Full definition of done: `RL_PROJECT_HANDOFF.md` §3.
+`PLAN.md` (repo root) is the living working doc — per-phase definitions of done (checkboxes = current status), open decisions, and a session log. Update it as work lands.
 
 ## Working with the maintainer
 
