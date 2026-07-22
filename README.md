@@ -22,7 +22,7 @@ rl/
 └── train.py      # unified entry point: config -> env + agent -> train/eval loop
 scripts/          # run helpers
 tests/            # harness sanity tests (must always stay green)
-results/          # run outputs (gitignored)
+runs/             # run outputs: checkpoints, TensorBoard events (gitignored)
 ```
 
 Every algorithm plugs into the same entry point, logger, and evaluation protocol:
@@ -57,3 +57,22 @@ Requires Python ≥ 3.10. The `box2d` extra (LunarLander) needs `swig` available
 python -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
 ```
+
+## Run
+
+Train (W&B is the default logger — `wandb login` first, or prefix with
+`WANDB_MODE=offline`, or set `logger: tensorboard` in the YAML):
+
+```
+python -m rl.train --config configs/frozenlake_q.yaml     # Q-learning on FrozenLake
+python -m rl.train --config configs/cartpole_random.yaml  # random-policy pipeline check
+```
+
+Watch a trained checkpoint play in a render window:
+
+```
+python scripts/watch.py runs/frozenlake_q/checkpoint.pt
+python scripts/watch.py runs/cartpole_random/checkpoint.pt   # random policy flailing
+```
+
+Run outputs live under `runs/<run_name>/` (gitignored), so train before watching.

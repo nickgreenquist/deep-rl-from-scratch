@@ -28,6 +28,8 @@ Every headline result comes from **≥3 independent training seeds** (5+ for the
 
 Replay buffer, target network, ε-greedy exploration; Double DQN / Dueling / n-step returns as config toggles. Benchmark on CartPole/LunarLander for sanity, then MinAtar (install `minatar` at phase start). Headline metric vs a published baseline.
 
+**On-ramp (first step of the phase): linear Q-learning on CartPole.** The DQN skeleton with a zero-hidden-layer network (`nn.Linear(4, 2)`) — a linear model borrowing all the same infra. Isolates the one conceptual leap from Phase 0 (shared weights generalize across states; the same TD error now takes a gradient step instead of a table-cell nudge) and meets the deadly triad — function approximation + bootstrapping + off-policy, where tabular convergence guarantees evaporate — *before* the target network and replay buffer arrive as its stabilizers. Then add the hidden layer and it's DQN. Optional half-hour calibration first: random search over linear policies solves CartPole outright — a reminder that "solves CartPole" is a low bar, which is why the headline benchmark is MinAtar.
+
 Expect this phase to feel disproportionately hard — it's the first algorithm *and* the first heavy use of the harness. That's front-loaded difficulty, not a signal the project is off track.
 
 ## Phase 2 — PPO (both tracks)
