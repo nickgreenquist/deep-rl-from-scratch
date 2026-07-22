@@ -19,6 +19,10 @@ Build order: seeding → config → logger → env factory → agent interface �
 
 Deliberately deferred: `rl/envs/wrappers.py` and `scripts/run.sh` (created when they have content); all deep RL algorithms (Phase 1+).
 
+## Benchmark protocol (Phases 1–4)
+
+Every headline result comes from **≥3 independent training seeds** (5+ for the capstone), reported as mean ± std across seeds — deep RL is brittle with respect to random seed (per Spinning Up), so single-run numbers don't count. The per-run eval protocol (fixed eval seeds, deterministic policy, N episodes) is unchanged.
+
 ## Phase 1 — DQN (discrete track)
 
 Replay buffer, target network, ε-greedy exploration; Double DQN / Dueling / n-step returns as config toggles. Benchmark on CartPole/LunarLander for sanity, then MinAtar (install `minatar` at phase start). Headline metric vs a published baseline.
@@ -28,6 +32,8 @@ Expect this phase to feel disproportionately hard — it's the first algorithm *
 ## Phase 2 — PPO (both tracks)
 
 GAE, clipped surrogate objective, entropy bonus, vectorized rollouts (the env-factory seam becomes real here). Runs discrete *and* continuous — the bridge between the two tracks and the likely capstone engine. Install `gymnasium[mujoco]` when the continuous track starts. Reference: "The 37 Implementation Details of Proximal Policy Optimization".
+
+Optional on-ramp, decide at phase start: a one-evening REINFORCE/VPG on CartPole (~80 lines, not a benchmarked milestone) to meet the policy-gradient core in isolation before PPO stacks GAE + clipping + vectorization on top.
 
 ## Phase 3 — SAC (continuous track)
 
@@ -42,4 +48,4 @@ Point the best spine algorithm at one substantial environment with published bas
 ## Session log
 
 - 2026-07-21 — Repo scaffolded: structure, README, CLAUDE.md, `.gitignore`, pinned `pyproject.toml`. Initial commit.
-- 2026-07-22 — Pushed to GitHub. Created `deep-rl` conda env; installed pinned deps and smoke-tested CartPole/FrozenLake/LunarLander. Added working-style and dev-env sections to CLAUDE.md. Retired the handoff doc into this file.
+- 2026-07-22 — Pushed to GitHub. Created `deep-rl` conda env; installed pinned deps and smoke-tested CartPole/FrozenLake/LunarLander. Added working-style and dev-env sections to CLAUDE.md. Retired the handoff doc into this file. Checked the plan against OpenAI Spinning Up: added the multi-seed benchmark protocol and the optional VPG on-ramp.
