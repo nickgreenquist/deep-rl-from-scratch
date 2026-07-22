@@ -2,18 +2,19 @@
 
 Living working doc for this repo: per-phase definitions of done (checkboxes = current status), open decisions, and a session log. `README.md` is the public summary; `CLAUDE.md` is the working rules. Update this file as work lands.
 
-## Phase 0 — shared harness + tabular warmup (in progress)
+## Phase 0 — shared harness + tabular warmup (complete)
 
 Goal: a training harness reused unchanged by every later algorithm, proven two ways — a random-policy pipeline check, then one agent that genuinely learns.
 
 - [x] Repo scaffold: directory structure, README, `.gitignore`, pinned `pyproject.toml`; `deep-rl` conda env created and deps validated
 - [x] Random-policy agent runs end-to-end on `CartPole-v1` through `python -m rl.train` (env → rollout → logging → periodic eval → checkpoint)
-- [ ] Tabular Q-learning on `FrozenLake-v1` (slippery 4x4, lookup table — no net) visibly learns: eval return climbs above the random baseline (~0.015 success rate)
+- [x] Tabular Q-learning on `FrozenLake-v1` (slippery 4x4, lookup table — no net) visibly learns: eval return climbs above the random baseline (~0.015 success rate) — final eval 0.67 ± 0.47 vs 0.02 random on the same eval episodes (optimal ≈ 0.74)
 - [x] Logging wired with the locked metric names from CLAUDE.md
 - [x] Seeding utility covering Python / NumPy / torch / env
 - [x] Eval protocol: fixed eval seeds, N episodes, deterministic policy, mean ± std
 - [x] Checkpoint save/load stub
 - [x] `tests/test_harness.py`: CartPole sanity test (a few hundred steps, asserts the loop completes) — stays green for the life of the project; it's the known-good path when a reward curve goes flat
+- [x] `scripts/watch.py`: render a checkpointed policy live (`python scripts/watch.py runs/<run>/checkpoint.pt`) — pulled forward from Phase 1 once a learned FrozenLake policy existed to watch; toy-text envs render graphically via pygame, contrary to the earlier text-grid assumption
 
 Build order: seeding → config → logger → env factory → agent interface → buffers (interface only) → eval → checkpoint → train loop → random agent → tabular Q-learning → sanity test.
 
@@ -28,8 +29,6 @@ Every headline result comes from **≥3 independent training seeds** (5+ for the
 Replay buffer, target network, ε-greedy exploration; Double DQN / Dueling / n-step returns as config toggles. Benchmark on CartPole/LunarLander for sanity, then MinAtar (install `minatar` at phase start). Headline metric vs a published baseline.
 
 Expect this phase to feel disproportionately hard — it's the first algorithm *and* the first heavy use of the harness. That's front-loaded difficulty, not a signal the project is off track.
-
-Also in this phase: a watch script (`scripts/watch.py`: load a checkpoint, render the policy with `render_mode="human"` via a passthrough in the env factory) — deferred from Phase 0 because it first pays off with a learned policy on a visual env (CartPole/LunarLander; FrozenLake renders as a text grid).
 
 ## Phase 2 — PPO (both tracks)
 
@@ -52,3 +51,4 @@ Point the best spine algorithm at one substantial environment with published bas
 - 2026-07-21 — Repo scaffolded: structure, README, CLAUDE.md, `.gitignore`, pinned `pyproject.toml`. Initial commit.
 - 2026-07-22 — Pushed to GitHub. Created `deep-rl` conda env; installed pinned deps and smoke-tested CartPole/FrozenLake/LunarLander. Added working-style and dev-env sections to CLAUDE.md. Retired the handoff doc into this file. Checked the plan against OpenAI Spinning Up: added the multi-seed benchmark protocol and the optional VPG on-ramp.
 - 2026-07-22 (later) — Random-policy milestone: logger seam (W&B + TensorBoard), env factory, `Agent` interface (+ `state_dict` for checkpointing), `RandomAgent`, fixed-seed eval, checkpoint stub, `rl.train` entry point, CartPole sanity test. Verified: `pytest` green; full 5000-step `cartpole_random.yaml` run through W&B (offline) hit the ~22 random baseline (eval 24.7 ± 11.1). Post-review fix: eval episode seeds are now constants (`EVAL_SEED_OFFSET + episode`), decoupled from the training seed so multi-seed benchmark runs share one eval distribution. Next: tabular Q-learning on FrozenLake.
+- 2026-07-22 (later still) — **Phase 0 complete.** Tabular Q-learning on slippery FrozenLake: `QLearningAgent` (ε-greedy, per-step Bellman update, ε annealed over first half of training), `frozenlake_q.yaml`, and the train loop's first real `update()` call (per-step, on the fresh transition; bootstraps through truncation but not termination). 200k steps → eval 0.67 ± 0.47 vs 0.02 random baseline on identical eval episodes; checkpoint restore reproduces 0.67 exactly. Also pulled `scripts/watch.py` forward from Phase 1 (render_mode passthrough in the env factory + checkpoint-driven agent rebuild) — verified live on the FrozenLake policy. Next: Phase 1 DQN (replay buffer → `rl/buffers/base.py` gets its first consumer).

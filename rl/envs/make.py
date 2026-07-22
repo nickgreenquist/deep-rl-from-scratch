@@ -11,8 +11,8 @@ Gymnasium seeding has two independent RNGs per env:
 import gymnasium as gym
 
 
-def make_env(env_id: str, seed: int) -> gym.Env:
-    env = gym.make(env_id)
+def make_env(env_id: str, seed: int, render_mode: str | None = None) -> gym.Env:
+    env = gym.make(env_id, render_mode=render_mode)
     env.action_space.seed(seed)
     env.observation_space.seed(seed)
     return env
