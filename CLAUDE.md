@@ -10,10 +10,17 @@ From-scratch deep RL in PyTorch, built as a portfolio piece over multiple months
 
 - **No RL libraries.** Never import or depend on Stable-Baselines3, RLlib, Tianshou, CleanRL, etc. Reading their source for reference is fine; depending on them is not.
 - **Plan before editing.** State which files you'll create/change and why; wait for a go-ahead. Keep diffs clean and reviewable.
-- **Small, single-purpose commits.** End every session at a green, committable state.
+- **Small, single-purpose commits.** End every session at a green, committable state, pushed to origin.
 - **Minimal dependencies.** Stdlib where possible; config is a dataclass + YAML, no experiment frameworks. Pin versions in `pyproject.toml`.
 - **CPU by default.** A device override flag exists, but do not rely on MPS — it's flaky for this workload. GPU appears only at the capstone (rented cloud instance).
 - **This repo may go public.** Keep personal details (employer, etc.) out of committed files.
+
+## Development environment
+
+- **Always run in the `deep-rl` conda env** (`/opt/anaconda3/envs/deep-rl`, Python 3.13): `conda activate deep-rl`, or call `/opt/anaconda3/envs/deep-rl/bin/python` / `.../bin/pytest` directly. Never use `base` or `pytorch_env` — the latter belongs to an unrelated project.
+- The repo is installed editable in that env, so `import rl` and `python -m rl.train` work as-is; tests run with `pytest tests/` from the repo root.
+- Dependency changes go through `pyproject.toml` with exact pins, then `pip install -e ".[dev]"` — no ad-hoc `pip install`, no `conda install` into the env.
+- Recreate from scratch if needed: `conda create -y -n deep-rl python=3.13`, then `pip install -e ".[dev]"` in it.
 
 ## Architecture invariants
 
