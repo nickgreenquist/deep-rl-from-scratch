@@ -10,6 +10,7 @@ from pathlib import Path
 import gymnasium as gym
 
 from rl.agents.base import Agent
+from rl.agents.dqn import DQNAgent
 from rl.agents.q_learning import QLearningAgent
 from rl.agents.random_agent import RandomAgent
 from rl.common.checkpoint import save_checkpoint
@@ -27,6 +28,9 @@ def make_agent(cfg: Config, env: gym.Env) -> Agent:
     if algo == "q_learning":
         hparams = {k: v for k, v in cfg.agent.items() if k != "algo"}
         return QLearningAgent(env.observation_space, env.action_space, **hparams)
+    if algo == "dqn":
+        hparams = {k: v for k, v in cfg.agent.items() if k != "algo"}
+        return DQNAgent(env.observation_space, env.action_space, device=cfg.device, **hparams)
     raise ValueError(f"unknown algo {algo!r}")
 
 
