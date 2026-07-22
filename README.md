@@ -43,7 +43,7 @@ python -m rl.train --config configs/<run>.yaml
 
 | Phase | Deliverable | Status |
 |------:|-------------|--------|
-| 0 | Repo + shared harness; random-policy pipeline check on CartPole; tabular Q-learning on FrozenLake | scaffold done — harness next |
+| 0 | Repo + shared harness; random-policy pipeline check on CartPole; tabular Q-learning on FrozenLake | done — Q-learning hits 0.67 success on slippery FrozenLake (random: 0.02, optimal: ~0.74) |
 | 1 | DQN (replay buffer, target network, ε-greedy; Double/Dueling/n-step as toggles) | planned |
 | 2 | PPO (GAE, clipped objective, entropy bonus, vectorized rollouts) | planned |
 | 3 | SAC (twin critics, reparameterized actor, auto-tuned entropy temperature) | planned |

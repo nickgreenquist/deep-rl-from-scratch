@@ -4,11 +4,13 @@ Every algorithm plugs in here; the loop stays algorithm-agnostic.
 
 import argparse
 import time
+from collections import defaultdict
 from pathlib import Path
 
 import gymnasium as gym
 
 from rl.agents.base import Agent
+from rl.agents.q_learning import QLearningAgent
 from rl.agents.random_agent import RandomAgent
 from rl.common.checkpoint import save_checkpoint
 from rl.common.config import Config, load_config
@@ -22,6 +24,9 @@ def make_agent(cfg: Config, env: gym.Env) -> Agent:
     algo = cfg.agent.get("algo")
     if algo == "random":
         return RandomAgent(env.action_space)
+    if algo == "q_learning":
+        hparams = {k: v for k, v in cfg.agent.items() if k != "algo"}
+        return QLearningAgent(env.observation_space, env.action_space, **hparams)
     raise ValueError(f"unknown algo {algo!r}")
 
 
@@ -34,10 +39,18 @@ def train(cfg: Config) -> None:
 
     obs, _ = env.reset(seed=cfg.seed)
     ep_return, ep_length = 0.0, 0
+    ep_losses: dict[str, float] = defaultdict(float)  # per-episode loss/* sums
     last_step, last_time = 0, time.perf_counter()
 
     for step in range(1, cfg.total_steps + 1):
-        obs, reward, terminated, truncated, _ = env.step(agent.act(obs))
+        action = agent.act(obs)
+        next_obs, reward, terminated, truncated, _ = env.step(action)
+        # Per-step update on the fresh transition (tabular Q; DQN keeps this
+        # cadence but samples from replay instead). `terminated` and not
+        # `truncated` is passed on purpose: a time-limit cut still bootstraps.
+        for name, value in agent.update((obs, action, float(reward), next_obs, terminated)).items():
+            ep_losses[name] += value
+        obs = next_obs
         ep_return += float(reward)
         ep_length += 1
 
@@ -48,12 +61,14 @@ def train(cfg: Config) -> None:
                     "rollout/episode_return": ep_return,
                     "rollout/episode_length": ep_length,
                     "time/steps_per_sec": (step - last_step) / (now - last_time),
+                    **{name: total / ep_length for name, total in ep_losses.items()},
                 },
                 step,
             )
             last_step, last_time = step, now
             obs, _ = env.reset()
             ep_return, ep_length = 0.0, 0
+            ep_losses.clear()
 
         if step % cfg.eval_every == 0:
             logger.log(evaluate(agent, eval_env, cfg.eval_episodes), step)
