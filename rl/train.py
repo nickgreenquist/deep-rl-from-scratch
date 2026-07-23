@@ -42,6 +42,8 @@ def train(cfg: Config) -> None:
     logger = make_logger(cfg)
 
     obs, _ = env.reset(seed=cfg.seed)
+    run_dir = Path("runs") / cfg.run_name
+    best_eval = float("-inf")
     ep_return, ep_length = 0.0, 0
     ep_losses: dict[str, float] = defaultdict(float)  # per-episode loss/* sums
     last_step, last_time = 0, time.perf_counter()
@@ -79,9 +81,16 @@ def train(cfg: Config) -> None:
             ep_losses.clear()
 
         if step % cfg.eval_every == 0:
-            logger.log(evaluate(agent, eval_env, cfg.eval_episodes), step)
+            metrics = evaluate(agent, eval_env, cfg.eval_episodes)
+            logger.log(metrics, step)
+            # The final policy is an arbitrary sample of an oscillating
+            # training trajectory (deep RL policies churn), so keep the
+            # best-so-far policy too. Report final and best.
+            if metrics["eval/return_mean"] > best_eval:
+                best_eval = metrics["eval/return_mean"]
+                save_checkpoint(run_dir / "best_checkpoint.pt", agent, step, cfg)
 
-    save_checkpoint(Path("runs") / cfg.run_name / "checkpoint.pt", agent, cfg.total_steps, cfg)
+    save_checkpoint(run_dir / "checkpoint.pt", agent, cfg.total_steps, cfg)
     logger.close()
     env.close()
     eval_env.close()

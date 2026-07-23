@@ -58,6 +58,10 @@ def test_cartpole_dqn_smoke(tmp_path, monkeypatch):
     ckpt = load_checkpoint(tmp_path / "runs" / "test_cartpole_dqn" / "checkpoint.pt")
     assert ckpt["step"] == 300
     assert ckpt["agent"]["transitions"] == 300
+    # The first eval pass always sets a new best, so the file must exist,
+    # and its step must be one of the eval steps.
+    best = load_checkpoint(tmp_path / "runs" / "test_cartpole_dqn" / "best_checkpoint.pt")
+    assert best["step"] % 150 == 0
     # First gradient step lands on the transition that fills the buffer to
     # learning_starts, so steps 100..300 inclusive all train.
     assert ckpt["agent"]["grad_steps"] == 201

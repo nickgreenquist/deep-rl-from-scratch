@@ -6,7 +6,7 @@
 # >= 200. Toggles off: this is the vanilla baseline.
 env_id: LunarLander-v3
 seed: 0
-total_steps: 300000
+total_steps: 500000
 eval_every: 15000
 eval_episodes: 20
 run_name: lunarlander_dqn
