@@ -40,6 +40,7 @@ import torch.nn.functional as F
 
 from rl.agents.base import Agent
 from rl.buffers.replay import ReplayBuffer
+from rl.networks.conv import ConvQNet
 from rl.networks.mlp import DuelingMLP, mlp
 
 
@@ -99,25 +100,44 @@ class DQNAgent(Agent):
         learning_starts: int,
         target_update_every: int,
         hidden_sizes: list[int],
+        optimizer: str = "adam",
         double: bool = False,
         dueling: bool = False,
         n_step: int = 1,
     ):
-        # Q(s, ·) needs a flat continuous obs vector and enumerable actions.
-        if not isinstance(observation_space, gym.spaces.Box) or len(observation_space.shape) != 1:
-            raise TypeError("DQNAgent requires a flat Box observation space")
+        # Q(s, ·) needs a flat obs vector or channel-first image planes,
+        # plus enumerable actions.
+        if not isinstance(observation_space, gym.spaces.Box) or len(observation_space.shape) not in (1, 3):
+            raise TypeError("DQNAgent requires a flat or channel-first image Box observation space")
         if not isinstance(action_space, gym.spaces.Discrete):
             raise TypeError("DQNAgent requires a Discrete action space")
         self.action_space = action_space
         self.device = torch.device(device)
-        net = DuelingMLP if dueling else mlp
-        obs_dim, n_actions = observation_space.shape[0], int(action_space.n)
-        self.q = net(obs_dim, hidden_sizes, n_actions).to(self.device)
-        self.q_target = net(obs_dim, hidden_sizes, n_actions).to(self.device)
+        n_actions = int(action_space.n)
+        if len(observation_space.shape) == 3:
+            # Rank-3 obs (e.g. MinAtar planes) select the conv net; no config key.
+            def build():
+                return ConvQNet(observation_space.shape, hidden_sizes, n_actions, dueling)
+        else:
+            def build():
+                net = DuelingMLP if dueling else mlp
+                return net(observation_space.shape[0], hidden_sizes, n_actions)
+        self.q = build().to(self.device)
+        self.q_target = build().to(self.device)
         self.q_target.load_state_dict(self.q.state_dict())
         self.q_target.requires_grad_(False)
-        self.optimizer = torch.optim.Adam(self.q.parameters(), lr=lr)
-        self.buffer = ReplayBuffer(buffer_capacity, observation_space.shape)
+        # Adam by default; centered RMSprop(alpha=0.95, eps=0.01) is the
+        # MinAtar paper's exact optimizer, wired in (not just noted) because
+        # it's a planned ablation whenever our curves diverge from theirs.
+        if optimizer == "adam":
+            self.optimizer = torch.optim.Adam(self.q.parameters(), lr=lr)
+        elif optimizer == "rmsprop":
+            self.optimizer = torch.optim.RMSprop(
+                self.q.parameters(), lr=lr, alpha=0.95, eps=0.01, centered=True
+            )
+        else:
+            raise ValueError(f"unknown optimizer {optimizer!r}")
+        self.buffer = ReplayBuffer(buffer_capacity, observation_space.shape, observation_space.dtype)
         self.accumulator = NStepAccumulator(n_step, gamma)
         self.double = double
         self.epsilon_start = epsilon_start
@@ -138,7 +158,9 @@ class DQNAgent(Agent):
             return int(self.action_space.sample())
         with torch.no_grad():
             obs_t = torch.as_tensor(obs, dtype=torch.float32, device=self.device)
-            return int(self.q(obs_t).argmax().item())
+            # Batch dim: Conv2d requires it, Linear tolerates it; argmax
+            # flattens the (1, A) output either way.
+            return int(self.q(obs_t.unsqueeze(0)).argmax().item())
 
     def update(self, batch: Any) -> dict[str, float]:
         # The train loop hands over the fresh transition each step; it runs
@@ -153,10 +175,11 @@ class DQNAgent(Agent):
         obs, actions, rewards, next_obs, terminated, discounts = self.buffer.sample(
             self.batch_size
         )
-        obs_t = torch.as_tensor(obs, device=self.device)
+        # Obs get an explicit float32: the buffer may hold bool planes (MinAtar).
+        obs_t = torch.as_tensor(obs, dtype=torch.float32, device=self.device)
         actions_t = torch.as_tensor(actions, device=self.device)
         rewards_t = torch.as_tensor(rewards, device=self.device)
-        next_obs_t = torch.as_tensor(next_obs, device=self.device)
+        next_obs_t = torch.as_tensor(next_obs, dtype=torch.float32, device=self.device)
         terminated_t = torch.as_tensor(terminated, device=self.device)
         discounts_t = torch.as_tensor(discounts, device=self.device)
 

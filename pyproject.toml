@@ -16,13 +16,15 @@ dependencies = [
     "wandb==0.28.1",       # default logger
     "tensorboard==2.21.0", # offline fallback logger
     "pyyaml==6.0.3",
+    # Phase 1 discrete-track benchmark envs. Drags in its GUI/analysis stack
+    # (matplotlib, seaborn, pandas, scipy) transitively — unavoidable via pip.
+    "minatar==1.0.15",
 ]
 
 [project.optional-dependencies]
 dev = ["pytest==9.1.1"]
 
 # Deferred to later phases — install when the phase starts, not before:
-#   minatar              (Phase 1, discrete-track benchmarks)
 #   gymnasium[mujoco]    (Phases 2-3, continuous track)
 #   procgen / craftax    (Phase 4 capstone — env undecided)
 

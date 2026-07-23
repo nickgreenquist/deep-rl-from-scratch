@@ -15,12 +15,15 @@ Batch = tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.nda
 
 
 class ReplayBuffer(Buffer):
-    def __init__(self, capacity: int, obs_shape: tuple[int, ...]):
+    def __init__(self, capacity: int, obs_shape: tuple[int, ...], obs_dtype=np.float32):
         self.capacity = capacity
-        self.obs = np.zeros((capacity, *obs_shape), dtype=np.float32)
+        # Obs arrays take the env's dtype: MinAtar's bool planes stay 1 byte
+        # per entry (100k Seaquest transitions ≈ 200MB, not float32's 800MB);
+        # agents cast to float at tensor time.
+        self.obs = np.zeros((capacity, *obs_shape), dtype=obs_dtype)
         self.actions = np.zeros(capacity, dtype=np.int64)
         self.rewards = np.zeros(capacity, dtype=np.float32)
-        self.next_obs = np.zeros((capacity, *obs_shape), dtype=np.float32)
+        self.next_obs = np.zeros((capacity, *obs_shape), dtype=obs_dtype)
         # float, not bool: used directly as the (1 - terminated) bootstrap mask
         self.terminated = np.zeros(capacity, dtype=np.float32)
         # Bootstrap discount for this transition: gamma^m, where m is the
