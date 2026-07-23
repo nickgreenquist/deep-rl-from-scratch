@@ -15,3 +15,30 @@ def mlp(in_dim: int, hidden_sizes: list[int], out_dim: int) -> nn.Sequential:
         if i < len(sizes) - 2:  # no activation after the output layer
             layers.append(nn.ReLU())
     return nn.Sequential(*layers)
+
+
+class DuelingMLP(nn.Module):
+    """Dueling head (Wang et al. 2016): a shared trunk feeds a scalar
+    state-value head V(s) and a per-action advantage head A(s, a), combined
+    as Q = V + A - mean(A). State value is learned once, not re-learned
+    independently inside every action's output; the mean-subtraction pins
+    the otherwise unidentifiable V/A split (any constant could shift
+    between them without changing Q).
+    """
+
+    def __init__(self, in_dim: int, hidden_sizes: list[int], out_dim: int):
+        super().__init__()
+        if not hidden_sizes:
+            raise ValueError("DuelingMLP needs at least one hidden layer for the shared trunk")
+        layers: list[nn.Module] = []
+        for h in hidden_sizes:
+            layers += [nn.Linear(in_dim, h), nn.ReLU()]
+            in_dim = h
+        self.trunk = nn.Sequential(*layers)
+        self.value = nn.Linear(in_dim, 1)
+        self.advantage = nn.Linear(in_dim, out_dim)
+
+    def forward(self, x):
+        z = self.trunk(x)
+        adv = self.advantage(z)
+        return self.value(z) + adv - adv.mean(dim=-1, keepdim=True)

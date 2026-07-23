@@ -50,9 +50,13 @@ def train(cfg: Config) -> None:
         action = agent.act(obs)
         next_obs, reward, terminated, truncated, _ = env.step(action)
         # Per-step update on the fresh transition (tabular Q; DQN keeps this
-        # cadence but samples from replay instead). `terminated` and not
-        # `truncated` is passed on purpose: a time-limit cut still bootstraps.
-        for name, value in agent.update((obs, action, float(reward), next_obs, terminated)).items():
+        # cadence but samples from replay instead). Both flags are passed:
+        # only `terminated` stops bootstrapping (a time-limit cut still
+        # bootstraps), but `truncated` still marks an episode boundary,
+        # which n-step accumulation must not chain across.
+        for name, value in agent.update(
+            (obs, action, float(reward), next_obs, terminated, truncated)
+        ).items():
             ep_losses[name] += value
         obs = next_obs
         ep_return += float(reward)
@@ -86,8 +90,17 @@ def train(cfg: Config) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", required=True, help="path to a run YAML")
+    # Overrides for the multi-seed benchmark protocol: same YAML, N seeds,
+    # each under its own run name.
+    parser.add_argument("--seed", type=int, default=None, help="override the config seed")
+    parser.add_argument("--run-name", default=None, help="override the config run_name")
     args = parser.parse_args()
-    train(load_config(args.config))
+    cfg = load_config(args.config)
+    if args.seed is not None:
+        cfg.seed = args.seed
+    if args.run_name is not None:
+        cfg.run_name = args.run_name
+    train(cfg)
 
 
 if __name__ == "__main__":

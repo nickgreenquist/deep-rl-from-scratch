@@ -11,7 +11,7 @@ import numpy as np
 
 from rl.buffers.base import Buffer
 
-Batch = tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]
+Batch = tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]
 
 
 class ReplayBuffer(Buffer):
@@ -23,16 +23,22 @@ class ReplayBuffer(Buffer):
         self.next_obs = np.zeros((capacity, *obs_shape), dtype=np.float32)
         # float, not bool: used directly as the (1 - terminated) bootstrap mask
         self.terminated = np.zeros(capacity, dtype=np.float32)
+        # Bootstrap discount for this transition: gamma^m, where m is the
+        # number of env steps between obs and next_obs (m < n_step when an
+        # episode end cut the window short). The buffer stays gamma-ignorant;
+        # the agent computes it.
+        self.discounts = np.zeros(capacity, dtype=np.float32)
         self._ptr = 0
         self._size = 0
 
-    def add(self, obs, action, reward, next_obs, terminated) -> None:
+    def add(self, obs, action, reward, next_obs, terminated, discount) -> None:
         i = self._ptr
         self.obs[i] = obs
         self.actions[i] = action
         self.rewards[i] = reward
         self.next_obs[i] = next_obs
         self.terminated[i] = terminated
+        self.discounts[i] = discount
         self._ptr = (i + 1) % self.capacity
         self._size = min(self._size + 1, self.capacity)
 
@@ -44,6 +50,7 @@ class ReplayBuffer(Buffer):
             self.rewards[idx],
             self.next_obs[idx],
             self.terminated[idx],
+            self.discounts[idx],
         )
 
     def __len__(self) -> int:

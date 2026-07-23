@@ -52,7 +52,9 @@ class QLearningAgent(Agent):
         return int(np.argmax(self.q[obs]))
 
     def update(self, batch: Any) -> dict[str, float]:
-        obs, action, reward, next_obs, terminated = batch
+        # `truncated` is unused: a 1-step update has no episode-boundary
+        # bookkeeping, and truncation doesn't stop bootstrapping (below).
+        obs, action, reward, next_obs, terminated, _truncated = batch
         # Bootstrap only through non-terminal next states. On truncation
         # (time limit) the episode was cut, not ended, so the future value
         # max_a Q(s', a) still applies — hence `terminated`, not `done`.
