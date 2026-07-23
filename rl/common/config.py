@@ -19,6 +19,11 @@ class Config:
     eval_episodes: int  # episodes per eval pass
     run_name: str
     device: str = "cpu"  # CPU by default; MPS is flaky for this workload
+    # Intra-op torch threads. 1 by default: per-step RL kernels are tiny, so
+    # the default pool thrashes (5x+ measured slowdown), and one core per run
+    # is what lets multi-seed benchmarks parallelize. Raise it when the nets
+    # and batches are big enough to amortize fork/join (capstone scale).
+    torch_threads: int = 1
     logger: str = "wandb"  # "wandb" | "tensorboard"
     agent: dict = field(default_factory=dict)
 

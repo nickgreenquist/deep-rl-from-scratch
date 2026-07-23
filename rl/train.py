@@ -8,6 +8,7 @@ from collections import defaultdict
 from pathlib import Path
 
 import gymnasium as gym
+import torch
 
 from rl.agents.base import Agent
 from rl.agents.dqn import DQNAgent
@@ -35,6 +36,10 @@ def make_agent(cfg: Config, env: gym.Env) -> Agent:
 
 
 def train(cfg: Config) -> None:
+    # First, before any tensor work (config.py explains the default of 1).
+    # Belt-and-suspenders: OMP_NUM_THREADS=1 at launch also binds the OpenMP
+    # runtime itself, which is sized before this call can run.
+    torch.set_num_threads(cfg.torch_threads)
     set_seed(cfg.seed)
     env = make_env(cfg.env_id, cfg.seed)
     eval_env = make_env(cfg.env_id, cfg.seed)  # eval reseeds per episode

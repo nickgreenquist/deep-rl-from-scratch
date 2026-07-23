@@ -68,6 +68,17 @@ python -m rl.train --config configs/frozenlake_q.yaml     # Q-learning on Frozen
 python -m rl.train --config configs/cartpole_random.yaml  # random-policy pipeline check
 ```
 
+Training is single-threaded torch by default (`torch_threads: 1` in the
+config): per-step RL kernels are microseconds of math, so the default
+intra-op thread pool costs more in fork/join than it buys (5x+ measured
+slowdown on MinAtar), and one core per run is what lets multi-seed
+benchmarks parallelize. For benchmark runs, also set the env var — the
+OpenMP runtime sizes its pool at import time, before the config can act:
+
+```
+OMP_NUM_THREADS=1 python -m rl.train --config configs/minatar_breakout_dqn.yaml
+```
+
 Watch a trained checkpoint play in a render window, with a live step/return
 line per episode (`--episodes N`; `--fps N` for slow motion — CartPole's
 native 50 fps is over in a blink):
