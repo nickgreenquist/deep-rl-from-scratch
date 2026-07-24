@@ -18,7 +18,7 @@ EVAL_SEED_OFFSET = 10_000
 
 
 def eval_returns(
-    agent: Agent, env: gym.Env, episodes: int, seed_start: int = 0
+    agent: Agent, env: gym.Env, episodes: int, seed_start: int = 0, max_steps: int = 10_000
 ) -> list[float]:
     """The protocol itself, returning per-episode returns. Analysis scripts
     use the raw list: identical episode seeds across runs make per-episode
@@ -28,14 +28,21 @@ def eval_returns(
     disjoint from the ones training-time eval selected checkpoints on.
     Caveat: MinAtar's sticky-action carry (`last_action`) survives reset,
     so ~1% of episodes are weakly order/policy dependent — negligible on
-    means; pairing across runs is approximate, not exact."""
+    means; pairing across runs is approximate, not exact.
+    `max_steps` caps a single episode: MinAtar registers no time limit,
+    and a strong Seaquest policy can survive indefinitely under greedy
+    eval (oxygen is renewable), hanging the protocol — observed in the
+    lr-5e-4 diagnostic runs. The cap is ~50x a normal MinAtar episode, so
+    it binds only on effectively-immortal policies; the return
+    accumulated at the cap is recorded."""
     returns = []
     for episode in range(episodes):
         obs, _ = env.reset(seed=EVAL_SEED_OFFSET + seed_start + episode)
-        ep_return, done = 0.0, False
-        while not done:
+        ep_return, done, steps = 0.0, False, 0
+        while not done and steps < max_steps:
             obs, reward, terminated, truncated, _ = env.step(agent.act(obs, deterministic=True))
             ep_return += float(reward)
+            steps += 1
             done = terminated or truncated
         returns.append(ep_return)
     return returns

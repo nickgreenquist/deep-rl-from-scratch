@@ -74,6 +74,27 @@ def test_run_dir_is_self_describing(trained_run):
     assert not list(run_dir.rglob("*.tmp"))
 
 
+class _NeverEndingEnv:
+    """Minimal env whose episodes never end — MinAtar has no time limit,
+    and an immortal policy under greedy eval would hang the protocol."""
+
+    def reset(self, seed=None):
+        return 0, {}
+
+    def step(self, action):
+        return 0, 1.0, False, False, {}
+
+
+class _StubAgent:
+    def act(self, obs, deterministic=False):
+        return 0
+
+
+def test_eval_episode_step_cap():
+    returns = eval_returns(_StubAgent(), _NeverEndingEnv(), episodes=2, max_steps=50)
+    assert returns == [50.0, 50.0]
+
+
 def test_eval_protocol_is_reproducible():
     # Fixed eval seeds + a deterministic policy: two passes must agree
     # exactly, or cross-run comparisons are meaningless.
