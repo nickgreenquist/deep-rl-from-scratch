@@ -3,19 +3,24 @@ Every algorithm plugs in here; the loop stays algorithm-agnostic.
 """
 
 import argparse
+import importlib.metadata
+import subprocess
 import time
 from collections import defaultdict
+from dataclasses import asdict
+from datetime import datetime, timezone
 from pathlib import Path
 
 import gymnasium as gym
 import torch
+import yaml
 
 from rl.agents.base import Agent
 from rl.agents.dqn import DQNAgent
 from rl.agents.q_learning import QLearningAgent
 from rl.agents.random_agent import RandomAgent
 from rl.common.checkpoint import save_checkpoint
-from rl.common.config import Config, load_config
+from rl.common.config import Config, load_config, run_dir
 from rl.common.evaluation import evaluate
 from rl.common.logging import make_logger
 from rl.common.seeding import set_seed
@@ -35,6 +40,42 @@ def make_agent(cfg: Config, env: gym.Env) -> Agent:
     raise ValueError(f"unknown algo {algo!r}")
 
 
+def _write_run_metadata(out_dir: Path, cfg: Config) -> None:
+    """Stamp the run dir before training starts: the resolved config (CLI
+    overrides baked in, reloadable via load_config) plus provenance — a
+    benchmark campaign spans days of possible code drift, so every result
+    must trace back to an exact tree."""
+    out_dir.mkdir(parents=True, exist_ok=True)
+    (out_dir / "config.yaml").write_text(yaml.safe_dump(asdict(cfg), sort_keys=False))
+    repo_root = Path(__file__).resolve().parents[1]
+    try:
+        sha = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            capture_output=True, text=True, check=True, cwd=repo_root,
+        ).stdout.strip()
+        dirty = bool(
+            subprocess.run(
+                ["git", "status", "--porcelain"],
+                capture_output=True, text=True, check=True, cwd=repo_root,
+            ).stdout.strip()
+        )
+    except (OSError, subprocess.CalledProcessError):
+        sha, dirty = "unknown", False
+    versions = {}
+    for pkg in ("torch", "gymnasium", "numpy", "minatar", "wandb"):
+        try:
+            versions[pkg] = importlib.metadata.version(pkg)
+        except importlib.metadata.PackageNotFoundError:
+            pass
+    meta = {
+        "started_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "git_sha": sha,
+        "git_dirty": dirty,
+        "versions": versions,
+    }
+    (out_dir / "meta.yaml").write_text(yaml.safe_dump(meta, sort_keys=False))
+
+
 def train(cfg: Config) -> None:
     # First, before any tensor work (config.py explains the default of 1).
     # Belt-and-suspenders: OMP_NUM_THREADS=1 at launch also binds the OpenMP
@@ -44,10 +85,12 @@ def train(cfg: Config) -> None:
     env = make_env(cfg.env_id, cfg.seed)
     eval_env = make_env(cfg.env_id, cfg.seed)  # eval reseeds per episode
     agent = make_agent(cfg, env)
+    out_dir = run_dir(cfg)
+    # Before the logger: even a run that dies in wandb.init leaves a stamped dir.
+    _write_run_metadata(out_dir, cfg)
     logger = make_logger(cfg)
 
     obs, _ = env.reset(seed=cfg.seed)
-    run_dir = Path("runs") / cfg.run_name
     best_eval = float("-inf")
     ep_return, ep_length = 0.0, 0
     ep_losses: dict[str, float] = defaultdict(float)  # per-episode loss/* sums
@@ -93,9 +136,12 @@ def train(cfg: Config) -> None:
             # best-so-far policy too. Report final and best.
             if metrics["eval/return_mean"] > best_eval:
                 best_eval = metrics["eval/return_mean"]
-                save_checkpoint(run_dir / "best_checkpoint.pt", agent, step, cfg)
+                save_checkpoint(out_dir / "best_checkpoint.pt", agent, step, cfg)
+            # Latest-policy snapshot every eval: a run that dies mid-flight
+            # still leaves best + latest + full metric history behind.
+            save_checkpoint(out_dir / "checkpoint.pt", agent, step, cfg)
 
-    save_checkpoint(run_dir / "checkpoint.pt", agent, cfg.total_steps, cfg)
+    save_checkpoint(out_dir / "checkpoint.pt", agent, cfg.total_steps, cfg)
     logger.close()
     env.close()
     eval_env.close()

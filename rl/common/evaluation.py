@@ -17,16 +17,32 @@ from rl.agents.base import Agent
 EVAL_SEED_OFFSET = 10_000
 
 
-def evaluate(agent: Agent, env: gym.Env, episodes: int) -> dict[str, float]:
+def eval_returns(
+    agent: Agent, env: gym.Env, episodes: int, seed_start: int = 0
+) -> list[float]:
+    """The protocol itself, returning per-episode returns. Analysis scripts
+    use the raw list: identical episode seeds across runs make per-episode
+    scores directly comparable (paired comparisons between variants).
+    `seed_start` shifts the ladder (episode i seeds with
+    EVAL_SEED_OFFSET + seed_start + i) so a re-eval can use episodes
+    disjoint from the ones training-time eval selected checkpoints on.
+    Caveat: MinAtar's sticky-action carry (`last_action`) survives reset,
+    so ~1% of episodes are weakly order/policy dependent — negligible on
+    means; pairing across runs is approximate, not exact."""
     returns = []
     for episode in range(episodes):
-        obs, _ = env.reset(seed=EVAL_SEED_OFFSET + episode)
+        obs, _ = env.reset(seed=EVAL_SEED_OFFSET + seed_start + episode)
         ep_return, done = 0.0, False
         while not done:
             obs, reward, terminated, truncated, _ = env.step(agent.act(obs, deterministic=True))
             ep_return += float(reward)
             done = terminated or truncated
         returns.append(ep_return)
+    return returns
+
+
+def evaluate(agent: Agent, env: gym.Env, episodes: int) -> dict[str, float]:
+    returns = eval_returns(agent, env, episodes)
     return {
         "eval/return_mean": float(np.mean(returns)),
         "eval/return_std": float(np.std(returns)),

@@ -10,7 +10,7 @@ from abc import ABC, abstractmethod
 from dataclasses import asdict
 from pathlib import Path
 
-from rl.common.config import Config
+from rl.common.config import Config, run_dir
 
 WANDB_PROJECT = "deep-rl-from-scratch"
 
@@ -27,7 +27,15 @@ class WandbLogger(Logger):
     def __init__(self, cfg: Config):
         import wandb  # multi-second import; deferred so the offline path never pays it
 
-        self._run = wandb.init(project=WANDB_PROJECT, name=cfg.run_name, config=asdict(cfg))
+        # Offline data lands under runs/<run_name>/wandb/ so every run dir is
+        # self-contained and parallel runs never share a directory. Explicit
+        # mkdir: a missing dir makes wandb fall back to ./wandb with only a
+        # warning.
+        out_dir = run_dir(cfg)
+        out_dir.mkdir(parents=True, exist_ok=True)
+        self._run = wandb.init(
+            project=WANDB_PROJECT, name=cfg.run_name, config=asdict(cfg), dir=str(out_dir)
+        )
 
     def log(self, metrics: dict[str, float], step: int) -> None:
         self._run.log(metrics, step=step)

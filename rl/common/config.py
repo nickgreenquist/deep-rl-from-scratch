@@ -28,6 +28,12 @@ class Config:
     agent: dict = field(default_factory=dict)
 
 
+def run_dir(cfg: Config) -> Path:
+    """Canonical output dir for a run. Shared by the train loop, the W&B
+    logger (offline data colocates here), and the analysis scripts."""
+    return Path("runs") / cfg.run_name
+
+
 def load_config(path: str | Path) -> Config:
     """Load a YAML file into a Config. Unknown keys and wrong types raise TypeError."""
     with open(path) as f:

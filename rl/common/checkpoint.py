@@ -15,7 +15,11 @@ from rl.common.config import Config
 def save_checkpoint(path: str | Path, agent: Agent, step: int, cfg: Config) -> None:
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    torch.save({"agent": agent.state_dict(), "step": step, "config": asdict(cfg)}, path)
+    # Write-then-rename: a run killed mid-save must not leave a truncated
+    # file where a good checkpoint used to be.
+    tmp = path.with_name(path.name + ".tmp")
+    torch.save({"agent": agent.state_dict(), "step": step, "config": asdict(cfg)}, tmp)
+    tmp.replace(path)
 
 
 def load_checkpoint(path: str | Path) -> dict[str, Any]:
