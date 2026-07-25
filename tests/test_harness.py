@@ -65,3 +65,30 @@ def test_cartpole_dqn_smoke(tmp_path, monkeypatch):
     # First gradient step lands on the transition that fills the buffer to
     # learning_starts, so steps 100..300 inclusive all train.
     assert ckpt["agent"]["grad_steps"] == 201
+
+
+def test_cartpole_reinforce_smoke(tmp_path, monkeypatch):
+    """REINFORCE through the same loop: episodic updates run (an untrained
+    policy's episodes are ~20 steps, so 300 steps completes several) and the
+    checkpoint restores."""
+    monkeypatch.chdir(tmp_path)
+    cfg = Config(
+        env_id="CartPole-v1",
+        seed=0,
+        total_steps=300,
+        eval_every=150,
+        eval_episodes=2,
+        run_name="test_cartpole_reinforce",
+        logger="tensorboard",
+        agent={
+            "algo": "reinforce",
+            "hidden_sizes": [32],
+            "lr": 1.0e-3,
+            "gamma": 0.99,
+        },
+    )
+    train(cfg)
+    ckpt = load_checkpoint(tmp_path / "runs" / "test_cartpole_reinforce" / "checkpoint.pt")
+    assert ckpt["step"] == 300
+    # Per-episode gradient steps demonstrably ran.
+    assert ckpt["agent"]["episodes"] > 0

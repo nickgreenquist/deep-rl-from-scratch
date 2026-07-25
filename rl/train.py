@@ -19,6 +19,7 @@ from rl.agents.base import Agent
 from rl.agents.dqn import DQNAgent
 from rl.agents.q_learning import QLearningAgent
 from rl.agents.random_agent import RandomAgent
+from rl.agents.reinforce import ReinforceAgent
 from rl.common.checkpoint import save_checkpoint
 from rl.common.config import Config, load_config, run_dir
 from rl.common.evaluation import evaluate
@@ -37,6 +38,9 @@ def make_agent(cfg: Config, env: gym.Env) -> Agent:
     if algo == "dqn":
         hparams = {k: v for k, v in cfg.agent.items() if k != "algo"}
         return DQNAgent(env.observation_space, env.action_space, device=cfg.device, **hparams)
+    if algo == "reinforce":
+        hparams = {k: v for k, v in cfg.agent.items() if k != "algo"}
+        return ReinforceAgent(env.observation_space, env.action_space, device=cfg.device, **hparams)
     raise ValueError(f"unknown algo {algo!r}")
 
 
@@ -93,7 +97,11 @@ def train(cfg: Config) -> None:
     obs, _ = env.reset(seed=cfg.seed)
     best_eval = float("-inf")
     ep_return, ep_length = 0.0, 0
-    ep_losses: dict[str, float] = defaultdict(float)  # per-episode loss/* sums
+    # Per-episode loss/* sums and per-key report counts: each key is averaged
+    # over the steps that reported it (DQN reports every step, REINFORCE once
+    # per episode), not over ep_length.
+    ep_losses: dict[str, float] = defaultdict(float)
+    ep_counts: dict[str, int] = defaultdict(int)
     last_step, last_time = 0, time.perf_counter()
 
     for step in range(1, cfg.total_steps + 1):
@@ -108,6 +116,7 @@ def train(cfg: Config) -> None:
             (obs, action, float(reward), next_obs, terminated, truncated)
         ).items():
             ep_losses[name] += value
+            ep_counts[name] += 1
         obs = next_obs
         ep_return += float(reward)
         ep_length += 1
@@ -119,7 +128,7 @@ def train(cfg: Config) -> None:
                     "rollout/episode_return": ep_return,
                     "rollout/episode_length": ep_length,
                     "time/steps_per_sec": (step - last_step) / (now - last_time),
-                    **{name: total / ep_length for name, total in ep_losses.items()},
+                    **{name: total / ep_counts[name] for name, total in ep_losses.items()},
                 },
                 step,
             )
@@ -127,6 +136,7 @@ def train(cfg: Config) -> None:
             obs, _ = env.reset()
             ep_return, ep_length = 0.0, 0
             ep_losses.clear()
+            ep_counts.clear()
 
         if step % cfg.eval_every == 0:
             metrics = evaluate(agent, eval_env, cfg.eval_episodes)
