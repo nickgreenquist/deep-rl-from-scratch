@@ -5,6 +5,8 @@ checkpoint) with a random agent for a few hundred steps and asserts it
 completes. Must stay green for the life of the project.
 """
 
+import numpy as np
+
 from rl.agents.random_agent import RandomAgent
 from rl.common.checkpoint import load_checkpoint
 from rl.common.config import Config
@@ -96,19 +98,21 @@ def test_cartpole_reinforce_smoke(tmp_path, monkeypatch):
 
 
 class _VecRandomAgent(RandomAgent):
-    """Stand-in for the vector-path contract until PPO lands: batched act()
-    over the vector env's action space during collection, a single action
-    when eval drives its scalar env."""
+    """Minimal agent on the vectorized constructor contract (single sub-env
+    spaces + num_envs): keeps the vector collection path tested independently
+    of PPO. Batched act() during collection, a single action when eval drives
+    its scalar env."""
 
     vectorized = True
 
-    def __init__(self, observation_space, action_space, device):
+    def __init__(self, observation_space, action_space, num_envs, device):
         super().__init__(action_space)
+        self.num_envs = num_envs
 
     def act(self, obs, deterministic=False):
         if deterministic:  # eval: one scalar env, one action
-            return int(self.action_space.sample()[0])
-        return self.action_space.sample()
+            return int(self.action_space.sample())
+        return np.array([self.action_space.sample() for _ in range(self.num_envs)])
 
 
 def test_vector_path_smoke(tmp_path, monkeypatch):

@@ -18,6 +18,7 @@ import yaml
 
 from rl.agents.base import Agent
 from rl.agents.dqn import DQNAgent
+from rl.agents.ppo import PPOAgent
 from rl.agents.q_learning import QLearningAgent
 from rl.agents.random_agent import RandomAgent
 from rl.agents.reinforce import ReinforceAgent
@@ -36,6 +37,7 @@ ALGOS: dict[str, type[Agent]] = {
     "q_learning": QLearningAgent,
     "dqn": DQNAgent,
     "reinforce": ReinforceAgent,
+    "ppo": PPOAgent,
 }
 
 
@@ -49,7 +51,18 @@ def make_agent(cfg: Config, env: gym.Env) -> Agent:
     hparams = {k: v for k, v in cfg.agent.items() if k != "algo"}
     if cls is QLearningAgent:
         return QLearningAgent(env.observation_space, env.action_space, **hparams)
-    # Torch agents share one constructor shape (DQN, REINFORCE, later PPO/SAC).
+    if cls.vectorized:
+        # Vectorized agents build against one sub-env's spaces plus the batch
+        # width. The getattr fallbacks cover the scalar-env rebuild in
+        # watch/record/eval_checkpoint: plain spaces, width 1.
+        return cls(
+            getattr(env, "single_observation_space", env.observation_space),
+            getattr(env, "single_action_space", env.action_space),
+            num_envs=getattr(env, "num_envs", 1),
+            device=cfg.device,
+            **hparams,
+        )
+    # Torch agents share one constructor shape (DQN, REINFORCE, later SAC).
     return cls(env.observation_space, env.action_space, device=cfg.device, **hparams)
 
 
