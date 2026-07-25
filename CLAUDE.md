@@ -45,6 +45,7 @@ From-scratch deep RL in PyTorch, built as a portfolio piece over multiple months
 - Sessions are short evening blocks; optimize for incremental, resumable progress.
 - **Runs longer than ~5 minutes go in the maintainer's terminal, not through Claude.** Hand over the exact command to run (env vars, config path, seed loop included), then read the resulting logs/checkpoints from disk and take it from there. Hard-learned on a prior project: PyTorch training launched through Claude Code tooling (Bash sessions, subagents, workflows) ran ~10x slower than the same command in a plain terminal. Short smokes and pytest stay in-session.
 - **Git:** commit only when asked; never commit+push in one command — commit, then ask before pushing.
+- To watch a recorded GIF, tell the maintainer to drag the file into Chrome — Preview/`open` shows a static filmstrip, not the animation.
 
 ## Working style
 
