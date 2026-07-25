@@ -12,6 +12,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import gymnasium as gym
+import numpy as np
 import torch
 import yaml
 
@@ -23,25 +24,33 @@ from rl.agents.reinforce import ReinforceAgent
 from rl.common.checkpoint import save_checkpoint
 from rl.common.config import Config, load_config, run_dir
 from rl.common.evaluation import evaluate
-from rl.common.logging import make_logger
+from rl.common.logging import Logger, make_logger
 from rl.common.seeding import set_seed
-from rl.envs.make import make_env
+from rl.envs.make import make_env, make_vec_env
+
+
+# Algo registry: make_agent constructs from it, and train() reads the class's
+# `vectorized` flag to pick env construction and collection path up front.
+ALGOS: dict[str, type[Agent]] = {
+    "random": RandomAgent,
+    "q_learning": QLearningAgent,
+    "dqn": DQNAgent,
+    "reinforce": ReinforceAgent,
+}
 
 
 def make_agent(cfg: Config, env: gym.Env) -> Agent:
     algo = cfg.agent.get("algo")
-    if algo == "random":
+    cls = ALGOS.get(algo)
+    if cls is None:
+        raise ValueError(f"unknown algo {algo!r}")
+    if cls is RandomAgent:
         return RandomAgent(env.action_space)
-    if algo == "q_learning":
-        hparams = {k: v for k, v in cfg.agent.items() if k != "algo"}
+    hparams = {k: v for k, v in cfg.agent.items() if k != "algo"}
+    if cls is QLearningAgent:
         return QLearningAgent(env.observation_space, env.action_space, **hparams)
-    if algo == "dqn":
-        hparams = {k: v for k, v in cfg.agent.items() if k != "algo"}
-        return DQNAgent(env.observation_space, env.action_space, device=cfg.device, **hparams)
-    if algo == "reinforce":
-        hparams = {k: v for k, v in cfg.agent.items() if k != "algo"}
-        return ReinforceAgent(env.observation_space, env.action_space, device=cfg.device, **hparams)
-    raise ValueError(f"unknown algo {algo!r}")
+    # Torch agents share one constructor shape (DQN, REINFORCE, later PPO/SAC).
+    return cls(env.observation_space, env.action_space, device=cfg.device, **hparams)
 
 
 def _write_run_metadata(out_dir: Path, cfg: Config) -> None:
@@ -86,7 +95,15 @@ def train(cfg: Config) -> None:
     # runtime itself, which is sized before this call can run.
     torch.set_num_threads(cfg.torch_threads)
     set_seed(cfg.seed)
-    env = make_env(cfg.env_id, cfg.seed)
+    # Collection path is a property of the algorithm class (Agent.vectorized),
+    # known before construction; an unknown algo falls through to make_agent's
+    # error. Eval always runs a single scalar env either way.
+    agent_cls = ALGOS.get(cfg.agent.get("algo"))
+    vectorized = agent_cls is not None and agent_cls.vectorized
+    if vectorized:
+        env = make_vec_env(cfg.env_id, cfg.seed, cfg.num_envs)
+    else:
+        env = make_env(cfg.env_id, cfg.seed)
     eval_env = make_env(cfg.env_id, cfg.seed)  # eval reseeds per episode
     agent = make_agent(cfg, env)
     out_dir = run_dir(cfg)
@@ -94,6 +111,20 @@ def train(cfg: Config) -> None:
     _write_run_metadata(out_dir, cfg)
     logger = make_logger(cfg)
 
+    if vectorized:
+        _vector_loop(cfg, env, eval_env, agent, logger, out_dir)
+    else:
+        _scalar_loop(cfg, env, eval_env, agent, logger, out_dir)
+
+    logger.close()
+    env.close()
+    eval_env.close()
+
+
+def _scalar_loop(
+    cfg: Config, env: gym.Env, eval_env: gym.Env, agent: Agent, logger: Logger, out_dir: Path
+) -> None:
+    """One env, one transition per update() call — random/tabular/DQN/REINFORCE."""
     obs, _ = env.reset(seed=cfg.seed)
     best_eval = float("-inf")
     ep_return, ep_length = 0.0, 0
@@ -152,9 +183,79 @@ def train(cfg: Config) -> None:
             save_checkpoint(out_dir / "checkpoint.pt", agent, step, cfg)
 
     save_checkpoint(out_dir / "checkpoint.pt", agent, cfg.total_steps, cfg)
-    logger.close()
-    env.close()
-    eval_env.close()
+
+
+def _vector_loop(
+    cfg: Config,
+    envs: gym.vector.VectorEnv,
+    eval_env: gym.Env,
+    agent: Agent,
+    logger: Logger,
+    out_dir: Path,
+) -> None:
+    """N lockstep envs, batched transitions — vectorized (on-policy) agents.
+
+    Autoreset is disabled (see make_vec_env): finished sub-envs are reset
+    manually right after their terminal step, so every transition handed to
+    update() is a real env step and next_obs at a terminal row is the
+    episode's true final observation. Loss metrics are logged whenever
+    update() reports them (once per rollout batch for PPO) instead of
+    averaged per episode — episodes end at different times across envs.
+    """
+    num_envs = envs.num_envs
+    obs, _ = envs.reset(seed=cfg.seed)  # gymnasium seeds sub-env i with seed + i
+    best_eval = float("-inf")
+    ep_returns = np.zeros(num_envs)
+    ep_lengths = np.zeros(num_envs, dtype=np.int64)
+    step, next_eval = 0, cfg.eval_every
+    last_step, last_time = 0, time.perf_counter()
+
+    # Step advances num_envs at a time, so the run ends at the first multiple
+    # of num_envs >= total_steps, and evals fire on crossing each threshold
+    # (both overshoot by < num_envs steps).
+    while step < cfg.total_steps:
+        actions = agent.act(obs)
+        next_obs, rewards, terminated, truncated, _ = envs.step(actions)
+        step += num_envs
+        update_metrics = agent.update((obs, actions, rewards, next_obs, terminated, truncated))
+        if update_metrics:
+            logger.log(update_metrics, step)
+        ep_returns += rewards
+        ep_lengths += 1
+        obs = next_obs
+
+        done = terminated | truncated
+        if done.any():
+            now = time.perf_counter()
+            sps = (step - last_step) / (now - last_time)
+            # One log per finished episode. Simultaneous finishes share a
+            # step, which W&B merges (last write wins) — rare, accepted.
+            for i in np.flatnonzero(done):
+                logger.log(
+                    {
+                        "rollout/episode_return": float(ep_returns[i]),
+                        "rollout/episode_length": int(ep_lengths[i]),
+                        "time/steps_per_sec": sps,
+                    },
+                    step,
+                )
+            last_step, last_time = step, now
+            ep_returns[done] = 0.0
+            ep_lengths[done] = 0
+            # Unfinished rows come back holding their current obs, so the
+            # returned array replaces obs wholesale.
+            obs, _ = envs.reset(options={"reset_mask": done})
+
+        if step >= next_eval:
+            next_eval += cfg.eval_every
+            metrics = evaluate(agent, eval_env, cfg.eval_episodes)
+            logger.log(metrics, step)
+            if metrics["eval/return_mean"] > best_eval:
+                best_eval = metrics["eval/return_mean"]
+                save_checkpoint(out_dir / "best_checkpoint.pt", agent, step, cfg)
+            save_checkpoint(out_dir / "checkpoint.pt", agent, step, cfg)
+
+    save_checkpoint(out_dir / "checkpoint.pt", agent, step, cfg)
 
 
 def main() -> None:

@@ -5,9 +5,10 @@ checkpoint) with a random agent for a few hundred steps and asserts it
 completes. Must stay green for the life of the project.
 """
 
+from rl.agents.random_agent import RandomAgent
 from rl.common.checkpoint import load_checkpoint
 from rl.common.config import Config
-from rl.train import train
+from rl.train import ALGOS, train
 
 
 def test_cartpole_harness_completes(tmp_path, monkeypatch):
@@ -92,3 +93,44 @@ def test_cartpole_reinforce_smoke(tmp_path, monkeypatch):
     assert ckpt["step"] == 300
     # Per-episode gradient steps demonstrably ran.
     assert ckpt["agent"]["episodes"] > 0
+
+
+class _VecRandomAgent(RandomAgent):
+    """Stand-in for the vector-path contract until PPO lands: batched act()
+    over the vector env's action space during collection, a single action
+    when eval drives its scalar env."""
+
+    vectorized = True
+
+    def __init__(self, observation_space, action_space, device):
+        super().__init__(action_space)
+
+    def act(self, obs, deterministic=False):
+        if deterministic:  # eval: one scalar env, one action
+            return int(self.action_space.sample()[0])
+        return self.action_space.sample()
+
+
+def test_vector_path_smoke(tmp_path, monkeypatch):
+    """Vector collection path end-to-end before its real consumer exists:
+    batched transitions, manual partial resets at episode ends, eval and
+    checkpointing on the unchanged scalar protocol."""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setitem(ALGOS, "vec_random", _VecRandomAgent)
+    cfg = Config(
+        env_id="CartPole-v1",
+        seed=0,
+        total_steps=300,
+        eval_every=150,
+        eval_episodes=2,
+        run_name="test_vector_random",
+        logger="tensorboard",
+        num_envs=4,
+        agent={"algo": "vec_random"},
+    )
+    train(cfg)
+    ckpt = load_checkpoint(tmp_path / "runs" / "test_vector_random" / "checkpoint.pt")
+    assert ckpt["step"] == 300  # 4 divides 300: the loop lands exactly
+    # Random episodes are ~20 steps, so episode ends (and partial resets)
+    # happened many times; the first eval always sets a best.
+    assert (tmp_path / "runs" / "test_vector_random" / "best_checkpoint.pt").exists()

@@ -6,6 +6,12 @@ from typing import Any
 
 
 class Agent(ABC):
+    # Collection mode, a property of the algorithm: vectorized agents (PPO)
+    # are driven by the train loop's vector path — act()/update() see batched
+    # (num_envs, ...) arrays during training, while eval still calls act()
+    # with a single unbatched obs.
+    vectorized = False
+
     @abstractmethod
     def act(self, obs: Any, deterministic: bool = False) -> Any:
         """Pick an action for one observation. `deterministic=True` is the

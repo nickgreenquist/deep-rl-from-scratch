@@ -19,6 +19,10 @@ class Config:
     eval_episodes: int  # episodes per eval pass
     run_name: str
     device: str = "cpu"  # CPU by default; MPS is flaky for this workload
+    # Parallel training envs, used only by vectorized (on-policy) agents —
+    # the train loop picks the collection path from the agent class, not
+    # from this value. Scalar agents ignore it.
+    num_envs: int = 1
     # Intra-op torch threads. 1 by default: per-step RL kernels are tiny, so
     # the default pool thrashes (5x+ measured slowdown), and one core per run
     # is what lets multi-seed benchmarks parallelize. Raise it when the nets
