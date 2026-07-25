@@ -1,0 +1,52 @@
+# PPO on MinAtar/Breakout — the annotated reference config for the discrete
+# track's headline: DQN vs PPO on all 5 games, same harness numbers, same 5M
+# budget, so only the algorithm varies. Rank-3 obs (10x10xC binary planes)
+# select ConvQNet for both the actor and the critic, and that trunk is the DQN
+# campaign's exact net (Conv 16@3x3 -> FC 128), so the architecture is held
+# fixed too. One hyperparameter set for all five games — per-game tuning is
+# the probe tier, as it was in Phase 1.
+#
+# The numbers follow the 8-env Atari-CNN recipe (ppo2 `atari()` / CleanRL
+# `ppo_atari.py`) coherently rather than mixing it with the MinAtar-JAX
+# references (PureJaxRL, gymnax-blines: 64 envs, lr 5e-4..5e-3, gamma 0.999,
+# flatten-MLP), which are a second coherent recipe and the named probe tier if
+# the health bands fail. Two knobs diverge from those refs on purpose:
+#   clip_eps 0.1 — the Atari-recipe value (all three MinAtar-JAX refs use
+#     0.2). Kept for recipe coherence, and it mechanically raises clip_frac,
+#     sharpening the chunk-3 diagnostic that read ~0 on CartPole.
+#   gamma 0.99 — DQN parity (the refs use 0.999, the likeliest single lever
+#     behind their high scores on the unbounded games). First probe candidate
+#     alongside lr, direction up.
+#
+# Arithmetic: 8 envs x 128 steps = 1024 transitions per update; 5M / 1024 =
+# 4,882 full updates (104 trailing rows discarded mid-fill). 5M and 100k both
+# divide by 8, so evals and the run's end land exactly. lr anneals linearly to
+# ~0 across the budget (Andrychowicz et al. report it pays at this scale); the
+# final update still runs at ~9.3e-8, never 0.
+#
+# Benchmark seeds are 0 / 100 / 200, not 0/1/2: gymnasium fans a vector seed
+# out as seed+i, so adjacent seeds would share sub-env episode-RNG streams
+# across 8-wide runs. Spacing by 100 keeps those windows disjoint.
+env_id: MinAtar/Breakout-v0
+seed: 0
+total_steps: 5000000
+eval_every: 100000
+eval_episodes: 20
+run_name: minatar_breakout_ppo
+device: cpu
+num_envs: 8  # top-level, never under agent: — make_agent injects num_envs itself
+logger: wandb
+agent:
+  algo: ppo
+  hidden_sizes: [128]  # post-conv FC sizes; the conv trunk is fixed at 16@3x3
+  lr: 2.5e-4
+  lr_anneal_steps: 5000000
+  gamma: 0.99
+  gae_lambda: 0.95
+  rollout_steps: 128
+  epochs: 4
+  minibatches: 4
+  clip_eps: 0.1
+  entropy_coef: 0.01
+  value_coef: 0.5
+  max_grad_norm: 0.5
