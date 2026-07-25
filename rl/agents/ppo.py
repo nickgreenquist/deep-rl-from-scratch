@@ -50,15 +50,26 @@ The other components, each replacing a REINFORCE compromise:
   critic is never masked: V(s) is a property of the state, not the
   action set.
 
+Rank-3 observations (MinAtar's binary planes) select a conv trunk instead
+of the MLP, by the same no-config-key rule DQN uses. Both heads get their
+own `ConvQNet` — the DQN campaign's exact architecture, so the discrete
+track's DQN-vs-PPO headline holds the net fixed and varies only the
+algorithm. Note this *departs* from the conv-PPO lineage: CleanRL, ppo2 and
+SB3 all share one trunk between the heads. Separate stacks follow PureJaxRL,
+keep the value_coef/value-clip reasoning below intact, and cost noise-level
+duplicate compute at 16 filters.
+
 Deliberately omitted (locked 2026-07-25 after review, see PLAN.md):
 
 - Value-loss clipping: Engstrom et al. 2020 found no evidence it helps and
-  Andrychowicz et al. 2021 found it can hurt; with separate actor/critic
-  nets its one theoretical benefit — damping value updates that would drag
-  a shared trunk out from under the policy — cannot apply.
-- Learning-rate annealing: real, but deferred to the MinAtar benchmark
-  configs, where Andrychowicz et al. report it pays; CartPole at a
-  constant 2.5e-4 doesn't need it.
+  Andrychowicz et al. 2021 found it can hurt. The omission rests on that
+  ablation evidence alone — *not* on the separate-nets argument, since
+  PureJaxRL ships value clipping with separate nets.
+- Reward/return normalization: the one omitted knob with positive ablation
+  evidence (Engstrom et al. 2020), scoped out so PPO and DQN consume an
+  identical reward stream on MinAtar.
+- Observation normalization: MinAtar planes are already binary 0/1; the
+  37-details item targets unbounded continuous observations.
 
 Note on value_coef: with disjoint actor/critic parameters and Adam, scaling
 the value loss barely changes the critic's own updates (Adam renormalizes
@@ -80,6 +91,7 @@ from torch.distributions import Categorical
 from rl.agents.base import Agent
 from rl.buffers.rollout import RolloutBuffer, compute_gae
 from rl.common.masking import masked_entropy, masked_logits
+from rl.networks.conv import ConvQNet
 from rl.networks.mlp import mlp
 
 
@@ -114,14 +126,22 @@ def clipped_surrogate_loss(
     return policy_loss, approx_kl, clip_frac
 
 
-def _orthogonal_init(net: nn.Sequential, head_gain: float) -> None:
-    """Orthogonal init (a 37-details item): gain sqrt(2) on hidden layers, a
-    task-specific gain on the head, zero biases. The 0.01 policy-head gain
-    makes the initial policy near-uniform — early exploration comes from
-    sampling a flat distribution, not from init noise."""
-    linears = [m for m in net if isinstance(m, nn.Linear)]
-    for layer in linears:
-        gain = head_gain if layer is linears[-1] else math.sqrt(2.0)
+def _orthogonal_init(net: nn.Module, head_gain: float) -> None:
+    """Orthogonal init (a 37-details item, values matching CleanRL's
+    `layer_init`): gain sqrt(2) on conv and hidden layers, a task-specific
+    gain on the head, zero biases. The 0.01 policy-head gain makes the
+    initial policy near-uniform — early exploration comes from sampling a
+    flat distribution, not from init noise.
+
+    Iterates `net.modules()` rather than the module itself: ConvQNet is not a
+    Sequential, so `for m in net` raises TypeError. Module order puts the
+    head last for both nets — which is also why ConvQNet's dueling flag must
+    stay off here: with dueling the last Linear in module order is
+    `advantage`, so `value` would silently take the head gain.
+    """
+    layers = [m for m in net.modules() if isinstance(m, (nn.Linear, nn.Conv2d))]
+    for layer in layers:
+        gain = head_gain if layer is layers[-1] else math.sqrt(2.0)
         nn.init.orthogonal_(layer.weight, gain=gain)
         nn.init.zeros_(layer.bias)
 
@@ -146,9 +166,11 @@ class PPOAgent(Agent):
         value_coef: float,
         max_grad_norm: float,
         hidden_sizes: list[int],
+        lr_anneal_steps: int = 0,
     ):
-        if not isinstance(observation_space, gym.spaces.Box) or len(observation_space.shape) != 1:
-            raise TypeError("PPOAgent requires a flat Box observation space")
+        # A flat obs vector or channel-first image planes, same rule as DQN.
+        if not isinstance(observation_space, gym.spaces.Box) or len(observation_space.shape) not in (1, 3):
+            raise TypeError("PPOAgent requires a flat or channel-first image Box observation space")
         if not isinstance(action_space, gym.spaces.Discrete):
             raise TypeError("PPOAgent requires a Discrete action space")
         self.device = torch.device(device)
@@ -160,14 +182,27 @@ class PPOAgent(Agent):
         self.entropy_coef = entropy_coef
         self.value_coef = value_coef
         self.max_grad_norm = max_grad_norm
-        obs_dim = observation_space.shape[0]
+        # act() distinguishes a single obs from a batched one by rank, so the
+        # env's own obs rank has to be remembered.
+        self.obs_rank = len(observation_space.shape)
+        self.base_lr = lr
+        self.lr_anneal_steps = lr_anneal_steps
         # Separate actor and critic, no shared trunk: the value_coef note in
-        # the module docstring is premised on it, and it removes the one
-        # scenario where value-loss clipping could have mattered. Tanh
-        # hiddens: the feedforward-PPO reference default the numeric
-        # hyperparameters were validated under.
-        self.actor = mlp(obs_dim, hidden_sizes, int(action_space.n), activation=nn.Tanh)
-        self.critic = mlp(obs_dim, hidden_sizes, 1, activation=nn.Tanh)
+        # the module docstring is premised on it.
+        if self.obs_rank == 3:
+            # Rank-3 obs (MinAtar planes) select the conv net — DQN's rule, no
+            # config key. ConvQNet hardcodes ReLU, which is what every conv-PPO
+            # reference uses; dueling stays off (see _orthogonal_init).
+            def build(out_dim: int) -> nn.Module:
+                return ConvQNet(observation_space.shape, hidden_sizes, out_dim)
+        else:
+            # Tanh hiddens: the feedforward-PPO reference default the numeric
+            # hyperparameters were validated under.
+            def build(out_dim: int) -> nn.Module:
+                return mlp(observation_space.shape[0], hidden_sizes, out_dim, activation=nn.Tanh)
+
+        self.actor = build(int(action_space.n))
+        self.critic = build(1)
         _orthogonal_init(self.actor, head_gain=0.01)
         _orthogonal_init(self.critic, head_gain=1.0)
         self.actor.to(self.device)
@@ -187,18 +222,25 @@ class PPOAgent(Agent):
 
     def act(self, obs: Any, action_mask: Any = None, deterministic: bool = False) -> Any:
         # float32 at tensor time (MinAtar obs are bool planes); branch on obs
-        # rank, no unconditional unsqueeze: collection hands (N, obs_dim),
-        # eval/watch hand a single (obs_dim,).
+        # rank, then batch the single path: collection hands (N, *obs_shape),
+        # eval/watch/record hand a bare (*obs_shape,). The single obs still
+        # needs a batch dim before the forward — Conv2d requires one, and
+        # without it Flatten would eat the channel dim — so this is a branch,
+        # not an unconditional unsqueeze. The (A,) mask broadcasts over the
+        # (1, A) logits fine.
         obs_t = torch.as_tensor(obs, dtype=torch.float32, device=self.device)
         mask_t = torch.as_tensor(action_mask, dtype=torch.bool, device=self.device)
+        single = obs_t.ndim == self.obs_rank
+        if single:
+            obs_t = obs_t.unsqueeze(0)
         with torch.no_grad():
             logits = masked_logits(self.actor(obs_t), mask_t)
         if deterministic:
             actions = logits.argmax(dim=-1)  # eval-time policy: the mode
         else:
             actions = Categorical(logits=logits).sample()
-        if obs_t.ndim == 1:
-            return int(actions.item())
+        if single:
+            return int(actions.item())  # (1,) -> the scalar the scalar loop wants
         return actions.cpu().numpy()
 
     def update(self, batch: Any) -> dict[str, float]:
@@ -211,11 +253,18 @@ class PPOAgent(Agent):
         if not self.buffer.full():
             return {}
         buf = self.buffer
+        horizon, num_envs = buf.horizon, buf.num_envs
 
-        obs_t = torch.as_tensor(buf.obs, dtype=torch.float32, device=self.device)  # (T, N, obs)
-        next_obs_t = torch.as_tensor(buf.next_obs, dtype=torch.float32, device=self.device)
-        actions_t = torch.as_tensor(buf.actions, device=self.device)  # (T, N)
-        masks_t = torch.as_tensor(buf.masks, device=self.device)  # (T, N, A) bool
+        # Flatten the leading (T, N) into one batch dim up front. The epoch
+        # loop needs it anyway, and the recompute below *requires* it: buffer
+        # obs are (T, N, *obs_shape), which for image planes is rank 5, and
+        # conv2d rejects that outright. Only GAE wants the (T, N) shape back.
+        flat_obs = torch.as_tensor(buf.obs, dtype=torch.float32, device=self.device).flatten(0, 1)
+        flat_next_obs = torch.as_tensor(
+            buf.next_obs, dtype=torch.float32, device=self.device
+        ).flatten(0, 1)
+        flat_actions = torch.as_tensor(buf.actions, device=self.device).reshape(-1)
+        flat_masks = torch.as_tensor(buf.masks, device=self.device).flatten(0, 1)  # (T*N, A) bool
         with torch.no_grad():
             # Recomputed at update start, not stored during collection: exact
             # (the policy hasn't changed since it acted — same argument as
@@ -223,11 +272,13 @@ class PPOAgent(Agent):
             # because every buffer row carries its own successor. old_logp is
             # recomputed under the STORED masks — the same masking every
             # epoch's forward applies below, so the first ratio is exactly 1.
-            values = self.critic(obs_t).squeeze(-1)  # (T, N)
-            next_values = self.critic(next_obs_t).squeeze(-1)
-            old_logp = Categorical(
-                logits=masked_logits(self.actor(obs_t), masks_t)
-            ).log_prob(actions_t)
+            values = self.critic(flat_obs).squeeze(-1).view(horizon, num_envs)
+            next_values = self.critic(flat_next_obs).squeeze(-1).view(horizon, num_envs)
+            old_logp = (
+                Categorical(logits=masked_logits(self.actor(flat_obs), flat_masks))
+                .log_prob(flat_actions)
+                .view(horizon, num_envs)
+            )
         advantages_t = torch.as_tensor(
             compute_gae(
                 buf.rewards,
@@ -240,17 +291,23 @@ class PPOAgent(Agent):
             ),
             device=self.device,
         )
-        # The critic's regression targets: GAE-consistent returns.
-        value_targets = advantages_t + values
-
-        # Flatten (T, N) -> (T*N,) and reshuffle at the transition level each
-        # epoch, so minibatches mix envs and timesteps.
-        flat_obs = obs_t.flatten(0, 1)
-        flat_actions = actions_t.reshape(-1)
-        flat_old_logp = old_logp.reshape(-1)
+        # The critic's regression targets: GAE-consistent returns. Back to
+        # flat for the minibatch loop, which reshuffles at the transition
+        # level each epoch so minibatches mix envs and timesteps.
+        flat_targets = (advantages_t + values).reshape(-1)
         flat_advantages = advantages_t.reshape(-1)
-        flat_targets = value_targets.reshape(-1)
-        flat_masks = masks_t.flatten(0, 1)
+        flat_old_logp = old_logp.reshape(-1)
+
+        # Linear lr anneal, off at lr_anneal_steps=0 (CartPole's constant lr).
+        # Andrychowicz et al. 2021 report it pays at benchmark scale, which is
+        # why it arrives with the MinAtar configs and not before. Keyed off the
+        # update counter — which is checkpointed — so a resumed run picks the
+        # schedule back up, and an eval-only restore never touches it. One
+        # param group: the single Adam over the actor+critic union.
+        if self.lr_anneal_steps:
+            steps_seen = self.updates * horizon * num_envs
+            frac = max(0.0, 1.0 - steps_seen / self.lr_anneal_steps)
+            self.optimizer.param_groups[0]["lr"] = self.base_lr * frac
 
         batch_size = flat_actions.shape[0]
         minibatch_size = batch_size // self.minibatches
