@@ -37,10 +37,14 @@ def eval_returns(
     accumulated at the cap is recorded."""
     returns = []
     for episode in range(episodes):
-        obs, _ = env.reset(seed=EVAL_SEED_OFFSET + seed_start + episode)
+        obs, info = env.reset(seed=EVAL_SEED_OFFSET + seed_start + episode)
+        mask = info.get("action_mask")  # masking applies at eval time too
         ep_return, done, steps = 0.0, False, 0
         while not done and steps < max_steps:
-            obs, reward, terminated, truncated, _ = env.step(agent.act(obs, deterministic=True))
+            obs, reward, terminated, truncated, info = env.step(
+                agent.act(obs, mask, deterministic=True)
+            )
+            mask = info.get("action_mask")
             ep_return += float(reward)
             steps += 1
             done = terminated or truncated

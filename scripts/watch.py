@@ -37,10 +37,14 @@ def main() -> None:
     agent.load_state_dict(ckpt["agent"])
 
     for episode in range(args.episodes):
-        obs, _ = env.reset()  # unseeded on purpose: fresh episodes every run
+        obs, info = env.reset()  # unseeded on purpose: fresh episodes every run
+        mask = info.get("action_mask")
         ep_return, ep_length, done = 0.0, 0, False
         while not done:
-            obs, reward, terminated, truncated, _ = env.step(agent.act(obs, deterministic=True))
+            obs, reward, terminated, truncated, info = env.step(
+                agent.act(obs, mask, deterministic=True)
+            )
+            mask = info.get("action_mask")
             ep_return += float(reward)
             ep_length += 1
             print(f"\repisode {episode + 1}: step {ep_length}, return {ep_return:g} ", end="", flush=True)

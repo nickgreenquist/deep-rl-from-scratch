@@ -25,7 +25,8 @@ From-scratch deep RL in PyTorch, built as a portfolio piece over multiple months
 ## Architecture invariants
 
 - Two tracks are first-class: discrete (DQN vs PPO) and continuous (PPO vs SAC). Never hardcode discrete-action assumptions in shared code.
-- Agent interface (`rl/agents/base.py`): `act(obs, deterministic=False) -> action`, `update(batch) -> dict[str, float]`. DQN, PPO, and SAC must all fit it without contortions.
+- Agent interface (`rl/agents/base.py`): `act(obs, action_mask=None, deterministic=False) -> action`, `update(batch) -> dict[str, float]`. DQN, PPO, and SAC must all fit it without contortions.
+- Action masking is a harness contract (capstone: legal actions change every turn): Discrete-action envs always emit `info["action_mask"]` — all-True via the `ActionMask` wrapper when nothing is illegal — and algorithms mask logits/Q through `rl/common/masking` (finite `-1e8` sentinel, never `-inf`; masked path always exercised, no `mask is None` branches in algorithm code). The value head is never masked; masking applies at eval time too.
 - Single entry point: `python -m rl.train --config configs/<run>.yaml`. Every algorithm plugs into it.
 - Logging: W&B is the default backend, TensorBoard behind a flag as the offline fallback, both wrapped by a thin logger interface. No W&B calls in algorithm code.
 - **Locked metric names** — reuse these exactly in every algorithm: `rollout/episode_return`, `rollout/episode_length`, `eval/return_mean`, `eval/return_std`, `time/steps_per_sec`, plus `loss/*` for per-algorithm losses.

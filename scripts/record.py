@@ -74,7 +74,8 @@ def main() -> None:
     agent = make_agent(cfg, env)
     agent.load_state_dict(ckpt["agent"])
 
-    obs, _ = env.reset(seed=args.seed)
+    obs, info = env.reset(seed=args.seed)
+    mask = info.get("action_mask")
     probe = np.asarray(env.render())  # sizes the HUD before any steps are taken
     scale = args.scale or max(1, round(TARGET_WIDTH / probe.shape[1]))
     font_size = min(24, max(12, probe.shape[1] * scale // 20))
@@ -86,11 +87,15 @@ def main() -> None:
     frame_ms = round(1000 / args.fps)
     for episode in range(1, args.episodes + 1):
         if episode > 1:
-            obs, _ = env.reset()
+            obs, info = env.reset()
+            mask = info.get("action_mask")
         ep_return, terminated, truncated = 0.0, False, False
         for step in range(args.max_steps + 1):  # step 0 is the reset frame
             if step > 0:
-                obs, reward, terminated, truncated, _ = env.step(agent.act(obs, deterministic=True))
+                obs, reward, terminated, truncated, info = env.step(
+                    agent.act(obs, mask, deterministic=True)
+                )
+                mask = info.get("action_mask")
                 ep_return += float(reward)
             # Integer returns (MinAtar) print bare; float returns (LunarLander) at 1 dp.
             ret = f"{ep_return:.0f}" if ep_return == int(ep_return) else f"{ep_return:.1f}"

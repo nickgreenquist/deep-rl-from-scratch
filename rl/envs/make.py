@@ -12,13 +12,21 @@ from functools import partial
 
 import gymnasium as gym
 
-from rl.envs.wrappers import ChannelFirst
+from rl.envs.wrappers import ActionMask, ChannelFirst
 
 
 def make_env(env_id: str, seed: int, render_mode: str | None = None) -> gym.Env:
     if env_id.startswith("MinAtar/"):
         _ensure_minatar_registered()
     env = gym.make(env_id, render_mode=render_mode)
+    if isinstance(env.action_space, gym.spaces.Discrete):
+        # Masking contract: every Discrete-action env emits info["action_mask"]
+        # (all-True unless the env supplies its own). Box-action envs (the
+        # continuous track) have no mask concept and never see one. Applied
+        # innermost: observation wrappers stay outermost (their attrs, e.g.
+        # ChannelFirst.observation, remain directly reachable) and ActionMask
+        # touches only infos, which pass through them unchanged.
+        env = ActionMask(env)
     if env_id.startswith("MinAtar/"):
         env = ChannelFirst(env)  # (10, 10, C) planes -> torch's (C, 10, 10)
     env.action_space.seed(seed)

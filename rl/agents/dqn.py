@@ -153,7 +153,7 @@ class DQNAgent(Agent):
         frac = min(self.transitions / self.epsilon_decay_steps, 1.0)
         return self.epsilon_start + frac * (self.epsilon_end - self.epsilon_start)
 
-    def act(self, obs: Any, deterministic: bool = False) -> int:
+    def act(self, obs: Any, action_mask: Any = None, deterministic: bool = False) -> int:
         if not deterministic and np.random.random() < self._epsilon():
             return int(self.action_space.sample())
         with torch.no_grad():
@@ -167,7 +167,7 @@ class DQNAgent(Agent):
         # through the n-step accumulator into the buffer, and the gradient
         # step trains on a sampled batch.
         self.transitions += 1
-        for transition in self.accumulator.push(*batch):
+        for transition in self.accumulator.push(*batch[:6]):
             self.buffer.add(*transition)
         if len(self.buffer) < self.learning_starts:
             return {}

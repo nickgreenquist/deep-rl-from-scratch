@@ -170,7 +170,7 @@ class PPOAgent(Agent):
         )
         self.updates = 0  # completed fill -> epochs cycles
 
-    def act(self, obs: Any, deterministic: bool = False) -> Any:
+    def act(self, obs: Any, action_mask: Any = None, deterministic: bool = False) -> Any:
         # float32 at tensor time (MinAtar obs are bool planes); branch on obs
         # rank, no unconditional unsqueeze: collection hands (N, obs_dim),
         # eval/watch hand a single (obs_dim,).
@@ -188,7 +188,7 @@ class PPOAgent(Agent):
     def update(self, batch: Any) -> dict[str, float]:
         # The vector loop hands one batched (N-wide) transition row per env
         # step; accumulate until the horizon fills, then train on the rollout.
-        self.buffer.add(*batch)
+        self.buffer.add(*batch[:6])
         if not self.buffer.full():
             return {}
         buf = self.buffer

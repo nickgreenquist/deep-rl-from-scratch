@@ -8,6 +8,7 @@ completes. Must stay green for the life of the project.
 import numpy as np
 
 from rl.agents.random_agent import RandomAgent
+from rl.common.masking import masked_sample
 from rl.common.checkpoint import load_checkpoint
 from rl.common.config import Config
 from rl.train import ALGOS, train
@@ -109,10 +110,12 @@ class _VecRandomAgent(RandomAgent):
         super().__init__(action_space)
         self.num_envs = num_envs
 
-    def act(self, obs, deterministic=False):
+    def act(self, obs, action_mask=None, deterministic=False):
         if deterministic:  # eval: one scalar env, one action
-            return int(self.action_space.sample())
-        return np.array([self.action_space.sample() for _ in range(self.num_envs)])
+            return masked_sample(self.action_space, action_mask)
+        return np.array(
+            [masked_sample(self.action_space, action_mask[i]) for i in range(self.num_envs)]
+        )
 
 
 def test_vector_path_smoke(tmp_path, monkeypatch):

@@ -14,6 +14,7 @@ import gymnasium as gym
 import numpy as np
 
 from rl.agents.base import Agent
+from rl.common.masking import NEG, masked_sample
 
 
 class QLearningAgent(Agent):
@@ -46,19 +47,28 @@ class QLearningAgent(Agent):
         frac = min(self.updates / self.epsilon_decay_steps, 1.0)
         return self.epsilon_start + frac * (self.epsilon_end - self.epsilon_start)
 
-    def act(self, obs: Any, deterministic: bool = False) -> int:
+    def act(self, obs: Any, action_mask: Any = None, deterministic: bool = False) -> int:
         if not deterministic and np.random.random() < self._epsilon():
-            return int(self.action_space.sample())
-        return int(np.argmax(self.q[obs]))
+            return masked_sample(self.action_space, action_mask)
+        # np.where with an all-True mask returns the row unchanged, so the
+        # masked argmax is bitwise-identical on envs without illegal actions.
+        return int(np.argmax(np.where(action_mask, self.q[obs], NEG)))
 
     def update(self, batch: Any) -> dict[str, float]:
         # `truncated` is unused: a 1-step update has no episode-boundary
         # bookkeeping, and truncation doesn't stop bootstrapping (below).
-        obs, action, reward, next_obs, terminated, _truncated = batch
+        obs, action, reward, next_obs, terminated, _truncated, _mask, next_mask = batch
         # Bootstrap only through non-terminal next states. On truncation
         # (time limit) the episode was cut, not ended, so the future value
         # max_a Q(s', a) still applies — hence `terminated`, not `done`.
-        target = reward if terminated else reward + self.gamma * self.q[next_obs].max()
+        # The max ranges over actions legal in s' (next_mask): bootstrapping
+        # from an action that could never be taken is the silent-corruption
+        # path masking exists to close.
+        target = (
+            reward
+            if terminated
+            else reward + self.gamma * np.where(next_mask, self.q[next_obs], NEG).max()
+        )
         td_error = target - self.q[obs, action]
         self.q[obs, action] += self.lr * td_error
         self.updates += 1

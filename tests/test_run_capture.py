@@ -86,7 +86,7 @@ class _NeverEndingEnv:
 
 
 class _StubAgent:
-    def act(self, obs, deterministic=False):
+    def act(self, obs, action_mask=None, deterministic=False):
         return 0
 
 

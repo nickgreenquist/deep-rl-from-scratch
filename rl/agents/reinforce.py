@@ -73,7 +73,7 @@ class ReinforceAgent(Agent):
         self._rewards: list[float] = []
         self.episodes = 0  # completed episodes = gradient steps taken
 
-    def act(self, obs: Any, deterministic: bool = False) -> int:
+    def act(self, obs: Any, action_mask: Any = None, deterministic: bool = False) -> int:
         with torch.no_grad():
             logits = self.policy(torch.as_tensor(obs, dtype=torch.float32, device=self.device))
             if deterministic:
@@ -86,7 +86,7 @@ class ReinforceAgent(Agent):
         # The train loop hands over the fresh transition each step; it
         # accumulates until the episode ends, then one gradient step trains
         # on the whole episode.
-        obs, action, reward, _, terminated, truncated = batch
+        obs, action, reward, _, terminated, truncated, _mask, _next_mask = batch
         self._obs.append(obs)
         self._actions.append(action)
         self._rewards.append(reward)

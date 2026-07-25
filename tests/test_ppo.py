@@ -115,7 +115,8 @@ def _row(t, num_envs=2, terminated=False):
     rewards = np.ones(num_envs, dtype=np.float32)
     term = np.full(num_envs, terminated)
     trunc = np.zeros(num_envs, dtype=bool)
-    return (obs, actions, rewards, next_obs, term, trunc)
+    masks = np.ones((num_envs, 2), dtype=bool)
+    return (obs, actions, rewards, next_obs, term, trunc, masks, masks)
 
 
 def test_update_cadence_fill_train_clear():

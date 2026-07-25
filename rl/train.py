@@ -138,7 +138,8 @@ def _scalar_loop(
     cfg: Config, env: gym.Env, eval_env: gym.Env, agent: Agent, logger: Logger, out_dir: Path
 ) -> None:
     """One env, one transition per update() call — random/tabular/DQN/REINFORCE."""
-    obs, _ = env.reset(seed=cfg.seed)
+    obs, info = env.reset(seed=cfg.seed)
+    mask = info.get("action_mask")  # None only for continuous-action envs
     best_eval = float("-inf")
     ep_return, ep_length = 0.0, 0
     # Per-episode loss/* sums and per-key report counts: each key is averaged
@@ -149,19 +150,23 @@ def _scalar_loop(
     last_step, last_time = 0, time.perf_counter()
 
     for step in range(1, cfg.total_steps + 1):
-        action = agent.act(obs)
-        next_obs, reward, terminated, truncated, _ = env.step(action)
+        action = agent.act(obs, mask)
+        next_obs, reward, terminated, truncated, info = env.step(action)
+        next_mask = info.get("action_mask")
         # Per-step update on the fresh transition (tabular Q; DQN keeps this
         # cadence but samples from replay instead). Both flags are passed:
         # only `terminated` stops bootstrapping (a time-limit cut still
         # bootstraps), but `truncated` still marks an episode boundary,
-        # which n-step accumulation must not chain across.
+        # which n-step accumulation must not chain across. The mask pair
+        # rides along: `mask` legalizes obs's actions, `next_mask` s''s (the
+        # bootstrap max needs it).
         for name, value in agent.update(
-            (obs, action, float(reward), next_obs, terminated, truncated)
+            (obs, action, float(reward), next_obs, terminated, truncated, mask, next_mask)
         ).items():
             ep_losses[name] += value
             ep_counts[name] += 1
         obs = next_obs
+        mask = next_mask
         ep_return += float(reward)
         ep_length += 1
 
@@ -177,7 +182,8 @@ def _scalar_loop(
                 step,
             )
             last_step, last_time = step, now
-            obs, _ = env.reset()
+            obs, info = env.reset()
+            mask = info.get("action_mask")
             ep_return, ep_length = 0.0, 0
             ep_losses.clear()
             ep_counts.clear()
@@ -216,7 +222,8 @@ def _vector_loop(
     averaged per episode — episodes end at different times across envs.
     """
     num_envs = envs.num_envs
-    obs, _ = envs.reset(seed=cfg.seed)  # gymnasium seeds sub-env i with seed + i
+    obs, infos = envs.reset(seed=cfg.seed)  # gymnasium seeds sub-env i with seed + i
+    masks = infos.get("action_mask")  # (N, A); None only for continuous envs
     best_eval = float("-inf")
     ep_returns = np.zeros(num_envs)
     ep_lengths = np.zeros(num_envs, dtype=np.int64)
@@ -227,15 +234,22 @@ def _vector_loop(
     # of num_envs >= total_steps, and evals fire on crossing each threshold
     # (both overshoot by < num_envs steps).
     while step < cfg.total_steps:
-        actions = agent.act(obs)
-        next_obs, rewards, terminated, truncated, _ = envs.step(actions)
+        actions = agent.act(obs, masks)
+        next_obs, rewards, terminated, truncated, infos = envs.step(actions)
+        # Autoreset is disabled, so step infos always describe the true
+        # successor states — at a truncated row next_masks is the final
+        # state's real mask, exactly what a bootstrap consumer needs.
+        next_masks = infos.get("action_mask")
         step += num_envs
-        update_metrics = agent.update((obs, actions, rewards, next_obs, terminated, truncated))
+        update_metrics = agent.update(
+            (obs, actions, rewards, next_obs, terminated, truncated, masks, next_masks)
+        )
         if update_metrics:
             logger.log(update_metrics, step)
         ep_returns += rewards
         ep_lengths += 1
         obs = next_obs
+        masks = next_masks
 
         done = terminated | truncated
         if done.any():
@@ -256,8 +270,12 @@ def _vector_loop(
             ep_returns[done] = 0.0
             ep_lengths[done] = 0
             # Unfinished rows come back holding their current obs, so the
-            # returned array replaces obs wholesale.
-            obs, _ = envs.reset(options={"reset_mask": done})
+            # returned array replaces obs wholesale. The reset info's mask
+            # array does NOT (non-reset rows are all-False placeholders in
+            # gymnasium's aggregation) — merge on the done rows only.
+            obs, reset_infos = envs.reset(options={"reset_mask": done})
+            if masks is not None:
+                masks = np.where(done[:, None], reset_infos["action_mask"], masks)
 
         if step >= next_eval:
             next_eval += cfg.eval_every
