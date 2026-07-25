@@ -44,10 +44,34 @@ python -m rl.train --config configs/<run>.yaml
 | Phase | Deliverable | Status |
 |------:|-------------|--------|
 | 0 | Repo + shared harness; random-policy pipeline check on CartPole; tabular Q-learning on FrozenLake | done — Q-learning hits 0.67 success on slippery FrozenLake (random: 0.02, optimal: ~0.74) |
-| 1 | DQN (replay buffer, target network, ε-greedy; Double/Dueling/n-step as toggles) | planned |
+| 1 | DQN (replay buffer, target network, ε-greedy; Double/Dueling/n-step as toggles) | done — reproduces the MinAtar paper's DQN on all 5 games (see Results); solves CartPole/LunarLander at peak |
 | 2 | PPO (GAE, clipped objective, entropy bonus, vectorized rollouts) | planned |
 | 3 | SAC (twin critics, reparameterized actor, auto-tuned entropy temperature) | planned |
 | 4 | Capstone vs published baseline | planned — env TBD |
+
+## Results — Phase 1: DQN on MinAtar
+
+![DQN on MinAtar: five games vs the published baseline, plus Breakout ablations](assets/minatar_dqn_campaign.png)
+
+From-scratch DQN reproduces the MinAtar paper's published DQN results (Young & Tian 2019; 5M frames, `-v0` envs — full 6-action set, sticky actions p=0.1) on **all five games**, 3 seeds per setting (paper: 30). Numbers are training return averaged over the final 500k steps, mean ± std across seeds — the paper's own ε-contaminated metric:
+
+| Game | Best-matching setting | Ours | Paper ≈ |
+|---|---|---|---|
+| Breakout | Adam 2.5e-4 | 10.3 ± 0.4 | 10 |
+| Freeway | either optimizer | 51.1 ± 0.1 (Adam) / 53.4 ± 0.2 (RMSprop) | 50.5 |
+| Seaquest | centered RMSprop 2.5e-4 | 19.7 ± 4.1 | 20 |
+| Space Invaders | centered RMSprop 2.5e-4 | 44.7 ± 0.5 | 45 |
+| Asterix | centered RMSprop 1e-4 | 16.8 ± 1.2 | 16.5 |
+
+Findings worth the compute:
+
+- **Optimizer choice interacts per-game.** Adam matches or beats the paper's centered RMSprop on Breakout and Freeway, but loses badly on Seaquest (5.4 vs 19.7) and Space Invaders (32.3 vs 44.7) at the same learning rate. The published curves are RMSprop curves: replicating them took the paper's optimizer on three games and its per-game step-size tuning on Asterix.
+- **Greedy policies score far above training return** — the ε=0.1 exploration floor is expensive here (Space Invaders: greedy ~91 vs ε-contaminated 45; one random action drops the ball / walks into a bullet).
+- **Breakout ablations** (3 seeds each, de-biased 100-episode evals): n-step 3 yields the best final policy (25.1 vs vanilla's 23.3); Double DQN eliminates the best-vs-final churn gap (−0.1 vs vanilla's +2.5) at a training-return cost — textbook overestimation damping at the textbook price.
+- **Training-time "best eval" checkpoints are winner's-cursed:** a 20-episode best overstates a fresh 100-episode re-eval by ~15% on every variant. Headline numbers use the de-biased protocol (`scripts/eval_checkpoint.py`, disjoint eval seeds).
+- A strong Seaquest policy can survive **indefinitely** under greedy eval (oxygen is renewable and MinAtar registers no time limit) — two diagnostic runs spent 5+ hours inside a single eval episode before the eval protocol gained a 10k-step cap.
+
+Full experiment log in `PLAN.md`. Every run directory is self-describing — resolved config, git SHA, package versions, W&B history, best + final checkpoints — across the 63 five-million-step runs (~60 core-hours on a laptop CPU) behind these numbers.
 
 ## Setup
 
