@@ -1,7 +1,8 @@
 """PPO-specific tests: hand-computed clipped-surrogate cases through the
 factored loss function (a regression points at the code, not at a second
 implementation of the same formula), the fill-then-train update cadence,
-and a train-loop smoke through the real vector path.
+the lr-anneal schedule's endpoints, act()'s rank handling on conv-shaped
+observations, and a train-loop smoke through the real vector path.
 """
 
 import math
@@ -107,6 +108,63 @@ def _agent(rollout_steps=4, num_envs=2):
     )
 
 
+def _anneal_agent():
+    """The MinAtar configs' schedule arithmetic exactly: 128-step rollouts
+    across 8 envs (1024 transitions per update), annealed over 5M env steps
+    from lr 2.5e-4. Epoch/minibatch counts are shrunk — the schedule is what's
+    under test, not the optimization."""
+    torch.manual_seed(0)
+    return PPOAgent(
+        observation_space=gym.spaces.Box(-1.0, 1.0, (3,), np.float32),
+        action_space=gym.spaces.Discrete(2),
+        num_envs=8,
+        device="cpu",
+        lr=2.5e-4,
+        gamma=0.99,
+        gae_lambda=0.95,
+        rollout_steps=128,
+        epochs=1,
+        minibatches=1,
+        clip_eps=0.1,
+        entropy_coef=0.01,
+        value_coef=0.5,
+        max_grad_norm=0.5,
+        hidden_sizes=[8],
+        lr_anneal_steps=5_000_000,
+    )
+
+
+def _conv_agent(num_envs=2, rollout_steps=4):
+    """MinAtar-shaped: rank-3 bool planes select ConvQNet for both heads."""
+    torch.manual_seed(0)
+    return PPOAgent(
+        observation_space=gym.spaces.Box(0, 1, (4, 10, 10), np.bool_),
+        action_space=gym.spaces.Discrete(6),
+        num_envs=num_envs,
+        device="cpu",
+        lr=2.5e-4,
+        gamma=0.99,
+        gae_lambda=0.95,
+        rollout_steps=rollout_steps,
+        epochs=2,
+        minibatches=2,
+        clip_eps=0.1,
+        entropy_coef=0.01,
+        value_coef=0.5,
+        max_grad_norm=0.5,
+        hidden_sizes=[32],
+    )
+
+
+def _lr_after_fill(agent, updates):
+    """Drive one full rollout fill with the update counter pinned, and read
+    back the lr the epoch loop just ran under."""
+    agent.updates = updates
+    for t in range(agent.buffer.horizon):
+        agent.update(_row(t, num_envs=agent.buffer.num_envs))
+    return agent.optimizer.param_groups[0]["lr"]
+
+
 def _row(t, num_envs=2, terminated=False):
     """One batched transition row as the vector loop hands it over."""
     obs = np.full((num_envs, 3), 0.1 * t, dtype=np.float32)
@@ -132,6 +190,54 @@ def test_update_cadence_fill_train_clear():
     assert agent.update(_row(4)) == {}  # the next row starts a fresh rollout
     # The 0.01-gain policy head starts near-uniform: entropy ~ ln 2.
     assert math.log(2.0) - 0.01 < metrics["loss/entropy"] <= math.log(2.0) + 1e-6
+
+
+def test_lr_anneal_endpoints():
+    """lr_t = base_lr * max(0, 1 - steps_seen / lr_anneal_steps), with
+    steps_seen = updates * 1024. 5M / 1024 = 4,882 full updates, so the last
+    one runs at updates == 4881 — and must still get a positive lr, or the
+    campaign's final update is wasted."""
+    agent = _anneal_agent()
+    assert _lr_after_fill(agent, 0) == pytest.approx(2.5e-4)  # first update: full lr
+    # 2441 * 1024 = 2,499,584 steps seen -> frac 0.5000832
+    assert _lr_after_fill(agent, 2441) == pytest.approx(1.250208e-4)
+    # 4881 * 1024 = 4,998,144 -> frac 1856 / 5e6 = 3.712e-4
+    last = _lr_after_fill(agent, 4881)
+    assert last == pytest.approx(9.28e-8)
+    assert last > 0
+
+
+def test_lr_anneal_off_by_default_and_clamped_at_zero():
+    # Default 0 = off: the CartPole config's constant lr survives the fill.
+    agent = _agent(rollout_steps=4)
+    for t in range(4):
+        agent.update(_row(t))
+    assert agent.optimizer.param_groups[0]["lr"] == pytest.approx(1.0e-3)
+    # Past the schedule's end the linear term goes negative; max(0, ·) pins it.
+    assert _lr_after_fill(_anneal_agent(), 6000) == 0.0
+
+
+def test_act_batches_a_single_rank3_obs_for_the_conv():
+    """The eval/watch/record path hands one (C, 10, 10) obs with no batch
+    dim. Conv2d requires one — without the unsqueeze, Flatten eats the
+    channel dim and the FC layer raises a mat1/mat2 shape error, which is
+    what would have killed the first eval at 100k steps. Both policy modes
+    go through it, and the (A,) mask broadcasts over the (1, A) logits."""
+    agent = _conv_agent()
+    obs = np.zeros((4, 10, 10), dtype=bool)
+    only_three = np.zeros(6, dtype=bool)
+    only_three[3] = True
+    for deterministic in (True, False):
+        action = agent.act(obs, np.ones(6, dtype=bool), deterministic=deterministic)
+        assert isinstance(action, int) and 0 <= action < 6
+        assert agent.act(obs, only_three, deterministic=deterministic) == 3
+
+
+def test_act_batched_rank4_obs_returns_one_action_per_env():
+    agent = _conv_agent(num_envs=3)
+    actions = agent.act(np.zeros((3, 4, 10, 10), dtype=bool), np.ones((3, 6), dtype=bool))
+    assert isinstance(actions, np.ndarray) and actions.shape == (3,)
+    assert ((0 <= actions) & (actions < 6)).all()
 
 
 def test_cartpole_ppo_smoke(tmp_path, monkeypatch):

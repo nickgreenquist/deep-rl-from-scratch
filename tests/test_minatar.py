@@ -1,6 +1,6 @@
 """MinAtar integration: explicit registration + ChannelFirst through the env
-factory, ConvQNet shapes (plain and dueling), and conv-DQN through the real
-train loop on Breakout.
+factory, ConvQNet shapes (plain and dueling), and conv-DQN and conv-PPO
+through the real train loop on Breakout.
 """
 
 import numpy as np
@@ -81,3 +81,45 @@ def test_minatar_dqn_smoke(tmp_path, monkeypatch):
     ckpt = load_checkpoint(tmp_path / "runs" / "test_minatar_dqn" / "checkpoint.pt")
     assert ckpt["step"] == 300
     assert ckpt["agent"]["grad_steps"] > 0
+
+
+def test_minatar_ppo_smoke(tmp_path, monkeypatch):
+    """Conv-PPO through the real vector train loop. Deliberately sized to
+    force BOTH conv paths the chunk-4 spec review probed as crashes: at least
+    one full rollout fill (the update-start recompute, where the buffer's
+    (T, N, C, H, W) tensor would reach conv2d at rank 5) and at least one
+    eval pass (act() on a single unbatched rank-3 obs). A shorter smoke
+    reaches neither and would ship both crashes green. Runs with the anneal
+    on, as the real configs do."""
+    monkeypatch.chdir(tmp_path)
+    cfg = Config(
+        env_id="MinAtar/Breakout-v0",
+        seed=0,
+        total_steps=200,
+        eval_every=100,
+        eval_episodes=2,
+        run_name="test_minatar_ppo",
+        logger="tensorboard",
+        num_envs=2,
+        agent={
+            "algo": "ppo",
+            "hidden_sizes": [32],
+            "lr": 2.5e-4,
+            "lr_anneal_steps": 200,
+            "gamma": 0.99,
+            "gae_lambda": 0.95,
+            "rollout_steps": 8,
+            "epochs": 2,
+            "minibatches": 2,
+            "clip_eps": 0.1,
+            "entropy_coef": 0.01,
+            "value_coef": 0.5,
+            "max_grad_norm": 0.5,
+        },
+    )
+    train(cfg)
+    ckpt = load_checkpoint(tmp_path / "runs" / "test_minatar_ppo" / "checkpoint.pt")
+    assert ckpt["step"] == 200
+    assert ckpt["agent"]["updates"] == 12  # 200/2 = 100 rows, the 8-row rollout fills 12x
+    # Evals at 100 and 200 ran the single-obs act path and saved through it.
+    assert (tmp_path / "runs" / "test_minatar_ppo" / "best_checkpoint.pt").exists()
