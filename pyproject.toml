@@ -19,6 +19,9 @@ dependencies = [
     # Phase 1 discrete-track benchmark envs. Drags in its GUI/analysis stack
     # (matplotlib, seaborn, pandas, scipy) transitively — unavoidable via pip.
     "minatar==1.0.15",
+    # Imported directly by scripts/record.py (frame annotation + GIF encode);
+    # pinned to the version matplotlib already pulls in transitively.
+    "pillow==12.3.0",
 ]
 
 [project.optional-dependencies]

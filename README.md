@@ -71,6 +71,12 @@ Findings worth the compute:
 - **Training-time "best eval" checkpoints are winner's-cursed:** a 20-episode best overstates a fresh 100-episode re-eval by ~15% on every variant. Headline numbers use the de-biased protocol (`scripts/eval_checkpoint.py`, disjoint eval seeds).
 - A strong Seaquest policy can survive **indefinitely** under greedy eval (oxygen is renewable and MinAtar registers no time limit) — two diagnostic runs spent 5+ hours inside a single eval episode before the eval protocol gained a 10k-step cap.
 
+What that looks like in play — greedy rollouts from the best Seaquest checkpoint (centered RMSprop, seed 0), recorded with `scripts/record.py`:
+
+![Trained DQN playing MinAtar Seaquest: three greedy episodes with a step/return HUD](assets/minatar_seaquest_dqn_rollout.gif)
+
+Three sample episodes scoring 32 / 73 / 36 (greedy play runs well above the ε-contaminated table metric). The 961-step middle episode is the oxygen loop working: shoot fish, pick up divers, surface to trade a diver for a full oxygen bar before it empties — the same loop that, done too well, makes a policy immortal.
+
 Full experiment log in `PLAN.md`. Every run directory is self-describing — resolved config, git SHA, package versions, W&B history, best + final checkpoints — across the 63 five-million-step runs (~60 core-hours on a laptop CPU) behind these numbers.
 
 ## Setup
@@ -110,6 +116,14 @@ native 50 fps is over in a blink):
 ```
 python scripts/watch.py runs/frozenlake_q/checkpoint.pt
 python scripts/watch.py runs/cartpole_random/checkpoint.pt --fps 15   # random policy flailing
+```
+
+Record the same greedy rollouts as an annotated GIF — episode/step/return
+stamped on every frame (`--seed` pins the episodes for a reproducible clip;
+`--max-steps` caps recording of effectively-immortal policies):
+
+```
+python scripts/record.py runs/<run>/best_checkpoint.pt
 ```
 
 Run outputs live under `runs/<run_name>/` (gitignored), so train before watching.
