@@ -40,6 +40,7 @@ import torch.nn.functional as F
 
 from rl.agents.base import Agent
 from rl.buffers.replay import ReplayBuffer
+from rl.common.masking import masked_logits, masked_sample
 from rl.networks.conv import ConvQNet
 from rl.networks.mlp import DuelingMLP, mlp
 
@@ -47,13 +48,19 @@ from rl.networks.mlp import DuelingMLP, mlp
 class NStepAccumulator:
     """Assembles n-step transitions from the per-step stream.
 
-    Holds up to n pending (obs, action, reward) entries. When the window
-    fills, the oldest entry is emitted as an n-step transition; when an
-    episode ends for any reason, all pending entries are flushed as
+    Holds up to n pending (obs, action, reward, mask) entries. When the
+    window fills, the oldest entry is emitted as an n-step transition; when
+    an episode ends for any reason, all pending entries are flushed as
     partial-window transitions (m < n steps, discount gamma^m). Truncation
     must flush too — not for bootstrapping (a truncated episode still
     bootstraps) but because the next stream entry belongs to a new episode
     and must not be chained to this one.
+
+    Masks ride the window: every emitted transition carries the oldest
+    entry's acting mask plus the mask of its bootstrap state s_{t+m} — the
+    flush-time next state. On an episode-end flush all partials share the
+    terminal state's next_mask: a correctly-shaped array even when
+    `terminated` makes the bootstrap (and therefore the mask) unused.
     """
 
     def __init__(self, n: int, gamma: float):
@@ -61,27 +68,30 @@ class NStepAccumulator:
         self.gamma = gamma
         self._pending: deque = deque()
 
-    def push(self, obs, action, reward, next_obs, terminated, truncated) -> list[tuple]:
+    def push(self, obs, action, reward, next_obs, terminated, truncated, mask, next_mask) -> list[tuple]:
         """Feed one env transition; return the buffer-ready transitions
-        (obs, action, n_step_return, next_obs, terminated, discount) it
-        completes — usually 0 or 1, up to n on an episode end."""
-        self._pending.append((obs, action, reward))
+        (obs, action, n_step_return, next_obs, terminated, discount, mask,
+        next_mask) it completes — usually 0 or 1, up to n on an episode end."""
+        self._pending.append((obs, action, reward, mask))
         out = []
         if terminated or truncated:
             while self._pending:
-                out.append(self._emit(next_obs, terminated))
+                out.append(self._emit(next_obs, terminated, next_mask))
                 self._pending.popleft()
         elif len(self._pending) == self.n:
-            out.append(self._emit(next_obs, False))
+            out.append(self._emit(next_obs, False, next_mask))
             self._pending.popleft()
         return out
 
-    def _emit(self, next_obs, terminated) -> tuple:
+    def _emit(self, next_obs, terminated, next_mask) -> tuple:
         ret = 0.0
-        for i, (_, _, reward) in enumerate(self._pending):
+        for i, (_, _, reward, _) in enumerate(self._pending):
             ret += self.gamma**i * reward
-        obs, action, _ = self._pending[0]
-        return (obs, action, ret, next_obs, float(terminated), self.gamma ** len(self._pending))
+        obs, action, _, mask = self._pending[0]
+        return (
+            obs, action, ret, next_obs, float(terminated),
+            self.gamma ** len(self._pending), mask, next_mask,
+        )
 
 
 class DQNAgent(Agent):
@@ -137,7 +147,9 @@ class DQNAgent(Agent):
             )
         else:
             raise ValueError(f"unknown optimizer {optimizer!r}")
-        self.buffer = ReplayBuffer(buffer_capacity, observation_space.shape, observation_space.dtype)
+        self.buffer = ReplayBuffer(
+            buffer_capacity, observation_space.shape, n_actions, observation_space.dtype
+        )
         self.accumulator = NStepAccumulator(n_step, gamma)
         self.double = double
         self.epsilon_start = epsilon_start
@@ -155,25 +167,27 @@ class DQNAgent(Agent):
 
     def act(self, obs: Any, action_mask: Any = None, deterministic: bool = False) -> int:
         if not deterministic and np.random.random() < self._epsilon():
-            return int(self.action_space.sample())
+            # Exploration respects the mask too: uniform over legal only.
+            return masked_sample(self.action_space, action_mask)
         with torch.no_grad():
             obs_t = torch.as_tensor(obs, dtype=torch.float32, device=self.device)
+            mask_t = torch.as_tensor(action_mask, dtype=torch.bool, device=self.device)
             # Batch dim: Conv2d requires it, Linear tolerates it; argmax
-            # flattens the (1, A) output either way.
-            return int(self.q(obs_t.unsqueeze(0)).argmax().item())
+            # flattens the (1, A) output either way (mask broadcasts).
+            return int(masked_logits(self.q(obs_t.unsqueeze(0)), mask_t).argmax().item())
 
     def update(self, batch: Any) -> dict[str, float]:
         # The train loop hands over the fresh transition each step; it runs
         # through the n-step accumulator into the buffer, and the gradient
         # step trains on a sampled batch.
         self.transitions += 1
-        for transition in self.accumulator.push(*batch[:6]):
+        for transition in self.accumulator.push(*batch):
             self.buffer.add(*transition)
         if len(self.buffer) < self.learning_starts:
             return {}
 
-        obs, actions, rewards, next_obs, terminated, discounts = self.buffer.sample(
-            self.batch_size
+        obs, actions, rewards, next_obs, terminated, discounts, _masks, next_masks = (
+            self.buffer.sample(self.batch_size)
         )
         # Obs get an explicit float32: the buffer may hold bool planes (MinAtar).
         obs_t = torch.as_tensor(obs, dtype=torch.float32, device=self.device)
@@ -182,15 +196,21 @@ class DQNAgent(Agent):
         next_obs_t = torch.as_tensor(next_obs, dtype=torch.float32, device=self.device)
         terminated_t = torch.as_tensor(terminated, device=self.device)
         discounts_t = torch.as_tensor(discounts, device=self.device)
+        next_masks_t = torch.as_tensor(next_masks, device=self.device)
 
         q_pred = self.q(obs_t).gather(1, actions_t.unsqueeze(1)).squeeze(1)
         with torch.no_grad():
+            # The bootstrap max/argmax ranges over actions legal in s'
+            # (next_mask): bootstrapping from an action that could never be
+            # taken is the silent-corruption path masking exists to close.
             if self.double:
                 # Online net selects the action, target net evaluates it.
-                next_actions = self.q(next_obs_t).argmax(dim=1, keepdim=True)
+                next_actions = masked_logits(self.q(next_obs_t), next_masks_t).argmax(
+                    dim=1, keepdim=True
+                )
                 next_q = self.q_target(next_obs_t).gather(1, next_actions).squeeze(1)
             else:
-                next_q = self.q_target(next_obs_t).max(dim=1).values
+                next_q = masked_logits(self.q_target(next_obs_t), next_masks_t).max(dim=1).values
             # Bootstrap only through non-terminal next states (same rule as
             # tabular Q: truncation is a cut, not an ending).
             target = rewards_t + discounts_t * (1.0 - terminated_t) * next_q

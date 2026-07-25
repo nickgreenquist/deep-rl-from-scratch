@@ -11,11 +11,14 @@ import numpy as np
 
 from rl.buffers.base import Buffer
 
-Batch = tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]
+Batch = tuple[
+    np.ndarray, np.ndarray, np.ndarray, np.ndarray,
+    np.ndarray, np.ndarray, np.ndarray, np.ndarray,
+]
 
 
 class ReplayBuffer(Buffer):
-    def __init__(self, capacity: int, obs_shape: tuple[int, ...], obs_dtype=np.float32):
+    def __init__(self, capacity: int, obs_shape: tuple[int, ...], n_actions: int, obs_dtype=np.float32):
         self.capacity = capacity
         # Obs arrays take the env's dtype: MinAtar's bool planes stay 1 byte
         # per entry (100k Seaquest transitions ≈ 200MB, not float32's 800MB);
@@ -31,10 +34,15 @@ class ReplayBuffer(Buffer):
         # episode end cut the window short). The buffer stays gamma-ignorant;
         # the agent computes it.
         self.discounts = np.zeros(capacity, dtype=np.float32)
+        # Legality masks: `masks` for obs's actions, `next_masks` for the
+        # bootstrap state's — the target max must range over actions legal in
+        # s', or it bootstraps from an action that could never be taken.
+        self.masks = np.zeros((capacity, n_actions), dtype=bool)
+        self.next_masks = np.zeros((capacity, n_actions), dtype=bool)
         self._ptr = 0
         self._size = 0
 
-    def add(self, obs, action, reward, next_obs, terminated, discount) -> None:
+    def add(self, obs, action, reward, next_obs, terminated, discount, mask, next_mask) -> None:
         i = self._ptr
         self.obs[i] = obs
         self.actions[i] = action
@@ -42,6 +50,8 @@ class ReplayBuffer(Buffer):
         self.next_obs[i] = next_obs
         self.terminated[i] = terminated
         self.discounts[i] = discount
+        self.masks[i] = mask
+        self.next_masks[i] = next_mask
         self._ptr = (i + 1) % self.capacity
         self._size = min(self._size + 1, self.capacity)
 
@@ -54,6 +64,8 @@ class ReplayBuffer(Buffer):
             self.next_obs[idx],
             self.terminated[idx],
             self.discounts[idx],
+            self.masks[idx],
+            self.next_masks[idx],
         )
 
     def __len__(self) -> int:

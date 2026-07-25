@@ -14,16 +14,23 @@ GAMMA = 0.5  # keeps hand-computed returns exact
 
 
 def push_step(acc, t, reward, terminated=False, truncated=False):
-    """Feed a transition with recognizable obs labels: obs f"s{t}" -> f"s{t + 1}"."""
-    return acc.push(f"s{t}", t, reward, f"s{t + 1}", terminated, truncated)
+    """Feed a transition with recognizable labels: obs f"s{t}" -> f"s{t + 1}",
+    masks f"m{t}" (acting) and f"m{t + 1}" (next state) — the accumulator is
+    data-agnostic, so the labels expose exactly which mask rides where."""
+    return acc.push(f"s{t}", t, reward, f"s{t + 1}", terminated, truncated, f"m{t}", f"m{t + 1}")
 
 
 def test_nstep_full_window():
     acc = NStepAccumulator(n=2, gamma=GAMMA)
     assert push_step(acc, 0, reward=1.0) == []  # window not full yet
-    # Window full: oldest entry emits with 2 real rewards, discount gamma^2.
-    assert push_step(acc, 1, reward=2.0) == [("s0", 0, 1.0 + GAMMA * 2.0, "s2", 0.0, GAMMA**2)]
-    assert push_step(acc, 2, reward=4.0) == [("s1", 1, 2.0 + GAMMA * 4.0, "s3", 0.0, GAMMA**2)]
+    # Window full: oldest entry emits with 2 real rewards, discount gamma^2,
+    # its own acting mask, and the mask of the bootstrap state s2.
+    assert push_step(acc, 1, reward=2.0) == [
+        ("s0", 0, 1.0 + GAMMA * 2.0, "s2", 0.0, GAMMA**2, "m0", "m2")
+    ]
+    assert push_step(acc, 2, reward=4.0) == [
+        ("s1", 1, 2.0 + GAMMA * 4.0, "s3", 0.0, GAMMA**2, "m1", "m3")
+    ]
 
 
 def test_nstep_termination_flushes_partials():
@@ -32,10 +39,12 @@ def test_nstep_termination_flushes_partials():
     out = push_step(acc, 1, reward=2.0, terminated=True)
     # Both pending entries flush with terminated=1.0 and their partial
     # returns; discounts are gamma^m for the m steps actually taken
-    # (masked away at train time, but stored consistently).
+    # (masked away at train time, but stored consistently). Every partial
+    # shares the terminal state's next_mask m2 — unused under terminated,
+    # but always a correctly-shaped value, never a placeholder.
     assert out == [
-        ("s0", 0, 1.0 + GAMMA * 2.0, "s2", 1.0, GAMMA**2),
-        ("s1", 1, 2.0, "s2", 1.0, GAMMA**1),
+        ("s0", 0, 1.0 + GAMMA * 2.0, "s2", 1.0, GAMMA**2, "m0", "m2"),
+        ("s1", 1, 2.0, "s2", 1.0, GAMMA**1, "m1", "m2"),
     ]
 
 
@@ -44,10 +53,11 @@ def test_nstep_truncation_flushes_but_still_bootstraps():
     push_step(acc, 0, reward=1.0)
     out = push_step(acc, 1, reward=2.0, truncated=True)
     # Same flush shape, but terminated=0.0: a time-limit cut still
-    # bootstraps from s2 (with the partial-window discount gamma^m).
+    # bootstraps from s2 (with the partial-window discount gamma^m), so
+    # here the shared next_mask m2 is load-bearing, not just well-shaped.
     assert out == [
-        ("s0", 0, 1.0 + GAMMA * 2.0, "s2", 0.0, GAMMA**2),
-        ("s1", 1, 2.0, "s2", 0.0, GAMMA**1),
+        ("s0", 0, 1.0 + GAMMA * 2.0, "s2", 0.0, GAMMA**2, "m0", "m2"),
+        ("s1", 1, 2.0, "s2", 0.0, GAMMA**1, "m1", "m2"),
     ]
 
 
@@ -58,13 +68,13 @@ def test_nstep_does_not_chain_across_episodes():
     # leftover state from the old episode.
     assert push_step(acc, 10, reward=8.0) == []
     assert push_step(acc, 11, reward=16.0) == [
-        ("s10", 10, 8.0 + GAMMA * 16.0, "s12", 0.0, GAMMA**2)
+        ("s10", 10, 8.0 + GAMMA * 16.0, "s12", 0.0, GAMMA**2, "m10", "m12")
     ]
 
 
 def test_nstep_1_is_vanilla():
     acc = NStepAccumulator(n=1, gamma=GAMMA)
-    assert push_step(acc, 0, reward=3.0) == [("s0", 0, 3.0, "s1", 0.0, GAMMA)]
+    assert push_step(acc, 0, reward=3.0) == [("s0", 0, 3.0, "s1", 0.0, GAMMA, "m0", "m1")]
 
 
 def test_dqn_all_toggles_smoke(tmp_path, monkeypatch):
