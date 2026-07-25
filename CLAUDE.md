@@ -4,7 +4,7 @@ Guide for Claude Code sessions on this repo. Read `PLAN.md` at session start for
 
 ## What this project is
 
-From-scratch deep RL in PyTorch, built as a portfolio piece over multiple months at ~10 hrs/week. Spine: DQN → PPO → SAC on a shared harness, benchmarked apples-to-apples, each phase independently shippable. Capstone: best algorithm on a substantial env vs a published baseline. The capstone environment is **undecided** (current lean: Procgen) — do not scaffold or assume anything capstone-specific.
+From-scratch deep RL in PyTorch, built as a portfolio piece over multiple months at ~10 hrs/week. Spine: DQN → PPO → SAC on a shared harness, benchmarked apples-to-apples, each phase independently shippable. Capstone (**decided**): Pokémon Showdown Gen 1 singles battling — battle phase only, no teambuilding — format `gen1randombattle`, via poke-env against a local Node.js Showdown server; hero algorithm is the Phase 2 PPO with self-play. Capstone-specific **code** stays deferred until Phase 3 (SAC) is complete: no poke-env dependency, no battle logic, no Pokémon observation encoders during Phases 2–3. (Harness-level contracts the capstone needs — e.g. action masking — may land earlier; they must be env-agnostic and provable no-ops on the spine envs.)
 
 ## Hard rules
 
