@@ -39,6 +39,16 @@ The other components, each replacing a REINFORCE compromise:
   doesn't go deterministic before learning finishes.
 - Vectorized collection: N lockstep envs decorrelate each rollout — the
   on-policy substitute for what replay did in DQN.
+- Action masking (rl/common/masking.py): logits are masked before every
+  softmax/argmax — at collection, at the update-start recompute, and on
+  every epoch's forward, with the mask STORED per rollout row. A mask
+  applied only at collection would leave pi_new unmasked while pi_old was
+  masked, silently corrupting every importance ratio; the stored-and-
+  reapplied mask keeps the two distributions consistent (and an all-True
+  mask leaves logits bitwise untouched). Entropy uses the where-guarded
+  masked_entropy — Categorical.entropy() over -inf logits is NaN. The
+  critic is never masked: V(s) is a property of the state, not the
+  action set.
 
 Deliberately omitted (locked 2026-07-25 after review, see PLAN.md):
 
@@ -69,6 +79,7 @@ from torch.distributions import Categorical
 
 from rl.agents.base import Agent
 from rl.buffers.rollout import RolloutBuffer, compute_gae
+from rl.common.masking import masked_entropy, masked_logits
 from rl.networks.mlp import mlp
 
 
@@ -166,7 +177,11 @@ class PPOAgent(Agent):
         self.params = [*self.actor.parameters(), *self.critic.parameters()]
         self.optimizer = torch.optim.Adam(self.params, lr=lr, eps=1e-5)
         self.buffer = RolloutBuffer(
-            rollout_steps, num_envs, observation_space.shape, observation_space.dtype
+            rollout_steps,
+            num_envs,
+            observation_space.shape,
+            int(action_space.n),
+            observation_space.dtype,
         )
         self.updates = 0  # completed fill -> epochs cycles
 
@@ -175,8 +190,9 @@ class PPOAgent(Agent):
         # rank, no unconditional unsqueeze: collection hands (N, obs_dim),
         # eval/watch hand a single (obs_dim,).
         obs_t = torch.as_tensor(obs, dtype=torch.float32, device=self.device)
+        mask_t = torch.as_tensor(action_mask, dtype=torch.bool, device=self.device)
         with torch.no_grad():
-            logits = self.actor(obs_t)
+            logits = masked_logits(self.actor(obs_t), mask_t)
         if deterministic:
             actions = logits.argmax(dim=-1)  # eval-time policy: the mode
         else:
@@ -188,7 +204,10 @@ class PPOAgent(Agent):
     def update(self, batch: Any) -> dict[str, float]:
         # The vector loop hands one batched (N-wide) transition row per env
         # step; accumulate until the horizon fills, then train on the rollout.
-        self.buffer.add(*batch[:6])
+        # next_masks has no consumer: the critic is the only next_obs reader,
+        # and values are never masked.
+        obs, actions, rewards, next_obs, terminated, truncated, masks, _next_masks = batch
+        self.buffer.add(obs, actions, rewards, next_obs, terminated, truncated, masks)
         if not self.buffer.full():
             return {}
         buf = self.buffer
@@ -196,14 +215,19 @@ class PPOAgent(Agent):
         obs_t = torch.as_tensor(buf.obs, dtype=torch.float32, device=self.device)  # (T, N, obs)
         next_obs_t = torch.as_tensor(buf.next_obs, dtype=torch.float32, device=self.device)
         actions_t = torch.as_tensor(buf.actions, device=self.device)  # (T, N)
+        masks_t = torch.as_tensor(buf.masks, device=self.device)  # (T, N, A) bool
         with torch.no_grad():
             # Recomputed at update start, not stored during collection: exact
             # (the policy hasn't changed since it acted — same argument as
             # REINFORCE's batched recompute), and next_obs gets its own pass
-            # because every buffer row carries its own successor.
+            # because every buffer row carries its own successor. old_logp is
+            # recomputed under the STORED masks — the same masking every
+            # epoch's forward applies below, so the first ratio is exactly 1.
             values = self.critic(obs_t).squeeze(-1)  # (T, N)
             next_values = self.critic(next_obs_t).squeeze(-1)
-            old_logp = Categorical(logits=self.actor(obs_t)).log_prob(actions_t)
+            old_logp = Categorical(
+                logits=masked_logits(self.actor(obs_t), masks_t)
+            ).log_prob(actions_t)
         advantages_t = torch.as_tensor(
             compute_gae(
                 buf.rewards,
@@ -226,6 +250,7 @@ class PPOAgent(Agent):
         flat_old_logp = old_logp.reshape(-1)
         flat_advantages = advantages_t.reshape(-1)
         flat_targets = value_targets.reshape(-1)
+        flat_masks = masks_t.flatten(0, 1)
 
         batch_size = flat_actions.shape[0]
         minibatch_size = batch_size // self.minibatches
@@ -239,12 +264,16 @@ class PPOAgent(Agent):
                 # zero-variance minibatch at zero instead of NaN.
                 mb_adv = flat_advantages[idx]
                 mb_adv = (mb_adv - mb_adv.mean()) / (mb_adv.std() + 1e-8)
-                dist = Categorical(logits=self.actor(flat_obs[idx]))
+                # Every epoch reapplies the stored mask: pi_new must be masked
+                # exactly like the pi_old above, or the ratio is silently
+                # wrong (all-True leaves the logits bitwise untouched).
+                raw_logits = self.actor(flat_obs[idx])
+                dist = Categorical(logits=masked_logits(raw_logits, flat_masks[idx]))
                 policy_loss, approx_kl, clip_frac = clipped_surrogate_loss(
                     dist.log_prob(flat_actions[idx]), flat_old_logp[idx], mb_adv, self.clip_eps
                 )
                 value_loss = F.mse_loss(self.critic(flat_obs[idx]).squeeze(-1), flat_targets[idx])
-                entropy = dist.entropy().mean()
+                entropy = masked_entropy(raw_logits, flat_masks[idx]).mean()
                 loss = policy_loss + self.value_coef * value_loss - self.entropy_coef * entropy
 
                 self.optimizer.zero_grad()

@@ -13,8 +13,18 @@ import pytest
 import torch
 from torch.distributions import Categorical
 
+from rl.agents.ppo import PPOAgent
+from rl.common.checkpoint import load_checkpoint
+from rl.common.config import Config
 from rl.common.masking import masked_entropy, masked_logits, masked_sample
-from tests.envs.masked_dummy import EP_LEN, N_ACTIONS, MaskedDummyEnv
+from rl.train import train
+from tests.envs.masked_dummy import (
+    MAX_EP_LEN,
+    MIN_EP_LEN,
+    N_ACTIONS,
+    MaskedDummyEnv,
+    register,
+)
 
 
 def test_all_true_mask_is_bitwise_identity():
@@ -97,9 +107,108 @@ def test_dummy_env_contract():
         mask = info["action_mask"]
         done = terminated or truncated
         steps += 1
-    assert steps == EP_LEN
+    assert MIN_EP_LEN <= steps <= MAX_EP_LEN
     obs, info = env.reset(seed=1)
     illegal = np.flatnonzero(~info["action_mask"])
     assert illegal.size > 0  # seed-pinned: this draw has an illegal action
     with pytest.raises(ValueError):
         env.step(int(illegal[0]))
+
+
+def test_ppo_first_epoch_ratio_is_one_with_masking_active():
+    """pi_old is recomputed at update start and pi_new on the epoch forwards;
+    if only one of them were masked, the very first minibatch's ratio drifts
+    from 1 and approx_kl/clip_frac leave zero — the silent corruption this
+    contract exists to prevent. With consistent masking they are exactly 0
+    (up to kernel-order float noise on the two forward shapes)."""
+    torch.manual_seed(0)
+    rng = np.random.default_rng(0)
+    agent = PPOAgent(
+        observation_space=gym.spaces.Box(-1.0, 1.0, (3,), np.float32),
+        action_space=gym.spaces.Discrete(N_ACTIONS),
+        num_envs=2,
+        device="cpu",
+        lr=1.0e-3,
+        gamma=0.99,
+        gae_lambda=0.95,
+        rollout_steps=4,
+        epochs=1,
+        minibatches=1,
+        clip_eps=0.2,
+        entropy_coef=0.01,
+        value_coef=0.5,
+        max_grad_norm=0.5,
+        hidden_sizes=[8],
+    )
+    for t in range(4):
+        masks = rng.random((2, N_ACTIONS)) < 0.5
+        masks[np.arange(2), rng.integers(N_ACTIONS, size=2)] = True  # >= 1 legal
+        actions = np.array([rng.choice(np.flatnonzero(m)) for m in masks])
+        metrics = agent.update(
+            (
+                rng.uniform(-1, 1, (2, 3)).astype(np.float32),
+                actions,
+                np.ones(2, dtype=np.float32),
+                rng.uniform(-1, 1, (2, 3)).astype(np.float32),
+                np.zeros(2, dtype=bool),
+                np.zeros(2, dtype=bool),
+                masks,
+                masks,
+            )
+        )
+    assert abs(metrics["loss/approx_kl"]) < 1e-6  # masked-inconsistency drift is ~1e-1
+    assert metrics["loss/clip_frac"] == 0.0
+
+
+def test_random_agent_end_to_end_on_masked_dummy(tmp_path, monkeypatch):
+    """Scalar loop + eval on an env that raises on illegal actions: the
+    masked_sample path and the scalar mask threading, end to end."""
+    register()
+    monkeypatch.chdir(tmp_path)
+    cfg = Config(
+        env_id="MaskedDummy-v0",
+        seed=0,
+        total_steps=200,
+        eval_every=100,
+        eval_episodes=2,
+        run_name="test_masked_random",
+        logger="tensorboard",
+        agent={"algo": "random"},
+    )
+    train(cfg)  # completing without a ValueError is the assertion
+
+
+def test_ppo_end_to_end_never_selects_illegal(tmp_path, monkeypatch):
+    """PPO through the real vector train loop on the masked dummy env:
+    batched masked act, stored-mask epochs, the partial-reset mask merge
+    (episode lengths vary so sub-envs desynchronize), and masked eval. The
+    env raises on any illegal action, so completing is the assertion."""
+    register()
+    monkeypatch.chdir(tmp_path)
+    cfg = Config(
+        env_id="MaskedDummy-v0",
+        seed=0,
+        total_steps=384,
+        eval_every=192,
+        eval_episodes=2,
+        run_name="test_masked_ppo",
+        logger="tensorboard",
+        num_envs=2,
+        agent={
+            "algo": "ppo",
+            "hidden_sizes": [16],
+            "lr": 2.5e-4,
+            "gamma": 0.99,
+            "gae_lambda": 0.95,
+            "rollout_steps": 32,
+            "epochs": 2,
+            "minibatches": 2,
+            "clip_eps": 0.2,
+            "entropy_coef": 0.01,
+            "value_coef": 0.5,
+            "max_grad_norm": 0.5,
+        },
+    )
+    train(cfg)
+    ckpt = load_checkpoint(tmp_path / "runs" / "test_masked_ppo" / "checkpoint.pt")
+    assert ckpt["agent"]["updates"] == 6  # 384/2 rows, rollout fills every 32

@@ -22,7 +22,14 @@ from rl.buffers.base import Buffer
 
 
 class RolloutBuffer(Buffer):
-    def __init__(self, horizon: int, num_envs: int, obs_shape: tuple[int, ...], obs_dtype=np.float32):
+    def __init__(
+        self,
+        horizon: int,
+        num_envs: int,
+        obs_shape: tuple[int, ...],
+        n_actions: int,
+        obs_dtype=np.float32,
+    ):
         self.horizon = horizon
         self.num_envs = num_envs
         # Obs arrays take the env dtype (same reasoning as the replay buffer).
@@ -33,9 +40,15 @@ class RolloutBuffer(Buffer):
         # Floats, not bools: used directly as (1 - flag) masks in compute_gae.
         self.terminated = np.zeros((horizon, num_envs), dtype=np.float32)
         self.truncated = np.zeros((horizon, num_envs), dtype=np.float32)
+        # Legality masks for each row's obs, stored so every optimization
+        # epoch reapplies the SAME mask the policy acted under — pi_new and
+        # pi_old must see identically masked distributions or the importance
+        # ratio is silently wrong on every sample. (No next-state masks: the
+        # critic is the only next_obs reader, and values are never masked.)
+        self.masks = np.zeros((horizon, num_envs, n_actions), dtype=bool)
         self._ptr = 0
 
-    def add(self, obs, actions, rewards, next_obs, terminated, truncated) -> None:
+    def add(self, obs, actions, rewards, next_obs, terminated, truncated, masks) -> None:
         """Store one batched (N-wide) transition row."""
         t = self._ptr  # IndexError past the horizon: the agent drains at full()
         self.obs[t] = obs
@@ -44,6 +57,7 @@ class RolloutBuffer(Buffer):
         self.next_obs[t] = next_obs
         self.terminated[t] = terminated
         self.truncated[t] = truncated
+        self.masks[t] = masks
         self._ptr += 1
 
     def full(self) -> bool:

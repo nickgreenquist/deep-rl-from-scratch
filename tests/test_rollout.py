@@ -97,21 +97,24 @@ def test_gae_envs_are_independent():
 
 
 def test_rollout_buffer_fill_drain_refill():
-    buf = RolloutBuffer(horizon=3, num_envs=2, obs_shape=(4,), obs_dtype=np.bool_)
+    buf = RolloutBuffer(horizon=3, num_envs=2, obs_shape=(4,), n_actions=3, obs_dtype=np.bool_)
     assert buf.obs.dtype == np.bool_  # env dtype preserved, as in replay
+    assert buf.masks.dtype == np.bool_ and buf.masks.shape == (3, 2, 3)
     obs = np.ones((2, 4), dtype=np.bool_)
+    masks = np.array([[True, False, True], [True, True, False]])
     for t in range(3):
         assert not buf.full()
         buf.add(obs, np.array([0, 1]), np.array([1.0, 2.0]), obs,
-                np.array([False, True]), np.array([False, False]))
+                np.array([False, True]), np.array([False, False]), masks)
     assert buf.full()
     assert len(buf) == 6  # 3 steps x 2 envs
     assert buf.terminated[0, 1] == 1.0  # bool flags land as float masks
+    assert (buf.masks[2] == masks).all()  # per-row legality stored verbatim
     with pytest.raises(IndexError):  # overfilling is a bug in the caller
         buf.add(obs, np.array([0, 1]), np.array([1.0, 2.0]), obs,
-                np.array([False, False]), np.array([False, False]))
+                np.array([False, False]), np.array([False, False]), masks)
     buf.clear()
     assert len(buf) == 0 and not buf.full()
     buf.add(obs, np.array([1, 1]), np.array([0.5, 0.5]), obs,
-            np.array([False, False]), np.array([True, True]))
+            np.array([False, False]), np.array([True, True]), masks)
     assert len(buf) == 2 and buf.truncated[0, 0] == 1.0

@@ -44,6 +44,7 @@ import torch
 from torch.distributions import Categorical
 
 from rl.agents.base import Agent
+from rl.common.masking import masked_entropy, masked_logits
 from rl.networks.mlp import mlp
 
 
@@ -71,11 +72,19 @@ class ReinforceAgent(Agent):
         self._obs: list[Any] = []
         self._actions: list[int] = []
         self._rewards: list[float] = []
+        # Masks are stored and reapplied at the episode-end recompute: the
+        # recomputed log-probs must come from the same masked distribution
+        # the actions were sampled under (see rl/common/masking.py).
+        self._masks: list[Any] = []
         self.episodes = 0  # completed episodes = gradient steps taken
 
     def act(self, obs: Any, action_mask: Any = None, deterministic: bool = False) -> int:
         with torch.no_grad():
-            logits = self.policy(torch.as_tensor(obs, dtype=torch.float32, device=self.device))
+            mask_t = torch.as_tensor(action_mask, dtype=torch.bool, device=self.device)
+            logits = masked_logits(
+                self.policy(torch.as_tensor(obs, dtype=torch.float32, device=self.device)),
+                mask_t,
+            )
             if deterministic:
                 # Eval-time policy: the mode. Exploration needs no epsilon —
                 # it lives in the sampling itself.
@@ -86,10 +95,11 @@ class ReinforceAgent(Agent):
         # The train loop hands over the fresh transition each step; it
         # accumulates until the episode ends, then one gradient step trains
         # on the whole episode.
-        obs, action, reward, _, terminated, truncated, _mask, _next_mask = batch
+        obs, action, reward, _, terminated, truncated, mask, _next_mask = batch
         self._obs.append(obs)
         self._actions.append(action)
         self._rewards.append(reward)
+        self._masks.append(mask)
         if not (terminated or truncated):
             return {}
 
@@ -105,10 +115,13 @@ class ReinforceAgent(Agent):
         returns_t = (returns_t - returns_t.mean()) / (returns_t.std(correction=0) + 1e-8)
 
         # Log-probs are recomputed in one batched forward pass — exact, since
-        # the policy hasn't changed since the actions were sampled.
+        # the policy hasn't changed since the actions were sampled — under the
+        # stored masks, i.e. the same distribution the actions came from.
         obs_t = torch.as_tensor(np.stack(self._obs), dtype=torch.float32, device=self.device)
         actions_t = torch.as_tensor(self._actions, device=self.device)
-        dist = Categorical(logits=self.policy(obs_t))
+        masks_t = torch.as_tensor(np.stack(self._masks), device=self.device)
+        logits = self.policy(obs_t)
+        dist = Categorical(logits=masked_logits(logits, masks_t))
         loss = -(dist.log_prob(actions_t) * returns_t).mean()
 
         self.optimizer.zero_grad()
@@ -118,13 +131,14 @@ class ReinforceAgent(Agent):
         self._obs.clear()
         self._actions.clear()
         self._rewards.clear()
+        self._masks.clear()
         self.episodes += 1
         # Entropy is the PG health metric: a premature fall toward zero means
         # the policy went near-deterministic before learning finished —
         # exploration is gone. PPO makes this a tuned bonus; here it's watched.
         return {
             "loss/policy": float(loss.item()),
-            "loss/entropy": float(dist.entropy().mean().item()),
+            "loss/entropy": float(masked_entropy(logits, masks_t).mean().item()),
         }
 
     def state_dict(self) -> dict[str, Any]:

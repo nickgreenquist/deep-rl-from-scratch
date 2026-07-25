@@ -11,15 +11,16 @@ import gymnasium as gym
 import numpy as np
 
 N_ACTIONS = 5
-EP_LEN = 20
+MIN_EP_LEN, MAX_EP_LEN = 15, 25  # varied so vectorized sub-envs desynchronize
 
 
 class MaskedDummyEnv(gym.Env):
-    def __init__(self):
+    def __init__(self, render_mode=None):  # accepted (unused): gym.make passes it
         self.action_space = gym.spaces.Discrete(N_ACTIONS)
         self.observation_space = gym.spaces.Box(-1.0, 1.0, (3,), np.float32)
         self._mask = np.ones(N_ACTIONS, dtype=bool)
         self._t = 0
+        self._ep_len = MAX_EP_LEN
 
     def _new_state(self):
         self._mask = self.np_random.random(N_ACTIONS) < 0.5
@@ -30,6 +31,7 @@ class MaskedDummyEnv(gym.Env):
     def reset(self, *, seed=None, options=None):
         super().reset(seed=seed)
         self._t = 0
+        self._ep_len = int(self.np_random.integers(MIN_EP_LEN, MAX_EP_LEN + 1))
         obs = self._new_state()
         return obs, {"action_mask": self._mask.copy()}
 
@@ -38,7 +40,7 @@ class MaskedDummyEnv(gym.Env):
             raise ValueError(f"illegal action {action} selected (mask {self._mask})")
         self._t += 1
         obs = self._new_state()
-        return obs, 1.0, self._t >= EP_LEN, False, {"action_mask": self._mask.copy()}
+        return obs, 1.0, self._t >= self._ep_len, False, {"action_mask": self._mask.copy()}
 
 
 def register() -> None:
