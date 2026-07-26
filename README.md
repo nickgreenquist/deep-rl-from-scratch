@@ -46,7 +46,7 @@ python -m rl.train --config configs/<run>.yaml
 | 0 | Repo + shared harness; random-policy pipeline check on CartPole; tabular Q-learning on FrozenLake | done — Q-learning hits 0.67 success on slippery FrozenLake (random: 0.02, optimal: ~0.74) |
 | 1 | DQN (replay buffer, target network, ε-greedy; Double/Dueling/n-step as toggles) | done — reproduces the MinAtar paper's DQN on all 5 games (see Results); solves CartPole/LunarLander at peak |
 | 2 | PPO (GAE, clipped objective, entropy bonus, vectorized rollouts) | **done, both tracks** — beats DQN on 3 of 5 MinAtar games; reproduces the reference on MuJoCo locomotion (see Results) |
-| 3 | SAC (twin critics, reparameterized actor, auto-tuned entropy temperature) | next — benchmarks against the Phase 2 PPO runs on the same three MuJoCo envs |
+| 3 | SAC (twin critics, reparameterized actor, auto-tuned entropy temperature) | **done** — beats PPO on all three MuJoCo envs per sample and loses to it per minute; validated against published SAC (see Results) |
 | 4 | Connect 4 self-play on-ramp: opponent pool, checkpoint Elo harness | planned |
 | 5 | Capstone: Pokémon Showdown Gen 1 via PPO + self-play | planned |
 
@@ -312,6 +312,103 @@ Caveats stated rather than buried:
   environments is a thin basis for any claim about PPO in general; Phase 3
   benchmarks SAC against these same runs, where the comparison is
   within-repo and holds the environment stack fixed.
+
+## Results — Phase 3: SAC vs PPO on MuJoCo
+
+![SAC vs PPO on three MuJoCo locomotion environments, plotted twice: return per environment step, and the same runs per wall-clock minute](assets/mujoco_sac_vs_ppo.png)
+
+SAC brings four things the earlier agents did not have: twin Q critics with a
+`min` over them, a reparameterized actor that differentiates *through* the
+critic, a tanh-squashed Gaussian with the change-of-variables correction that
+squashing forces, and an entropy temperature tuned automatically against a
+target entropy. Same harness, same eval protocol, same three environments.
+
+**The comparison is run twice, on purpose.** SAC's reference recipe uses raw
+environments; PPO's uses observation and reward normalization. Rather than
+pick one and argue, both were run: a 9-run PPO-raw control campaign holds the
+environment stack fixed, and PPO-normalized stands as PPO's honest best.
+
+| Env | SAC | PPO (raw) | PPO (normalized) | SAC / PPO-raw | SAC / PPO-norm |
+|---|---|---|---|---|---|
+| HalfCheetah-v5 | **9065 ± 361** | 1385 ± 131 | 2437 ± 1021 | 6.5× | 3.7× |
+| Hopper-v5 | **2593 ± 522** | 1904 ± 99 | 2380 ± 698 | 1.4× | 1.1× |
+| Walker2d-v5 | **4624 ± 375** | 1407 ± 563 | 3122 ± 284 | 3.3× | 1.5× |
+
+Stochastic training return, last 100k steps, mean ± std over 3 seeds. SAC wins
+on every environment under both comparisons, so the headline needs no
+qualifying — but the two ratios differ by up to 2× and the honest reading sits
+between them. The matched-stack column is fair on environment and unfair on
+recipe; the normalized column is the reverse.
+
+**Is the implementation right?** That question comes before the comparison, and
+it is what taking CleanRL's recipe whole buys — off-recipe, "a bug" and "a
+config difference" are indistinguishable. Against published SAC, matched to the
+protocol each number was measured under:
+
+| Env | Ours (protocol) | vs paper | vs SpinningUp | vs SB3-zoo | vs CleanRL |
+|---|---|---|---|---|---|
+| HalfCheetah-v5 | 9734 greedy / 9065 stochastic | 89% | 84% | 102% | 82% |
+| Hopper-v5 | 3424 greedy / 2593 stochastic | 105% | 109% | 147% | 108% |
+| Walker2d-v5 | 4830 greedy / 4624 stochastic | 101% | 114% | 125% | 102% |
+
+Greedy columns compare to the deterministic-evaluation anchors (the paper,
+SpinningUp, SB3-zoo); the CleanRL column compares training return to training
+return. **Hopper and Walker2d land at or above published; HalfCheetah sits
+84–102%** — worth keeping in perspective, since the published sources
+disagree with *each other* by 27% on that environment (9535 to 12139). No
+1M-step SAC number exists for any `-v5` environment, so every anchor is a v2/v3
+transfer, weaker than the v4 anchors Phase 2 had.
+
+Findings worth the compute:
+
+- **Sample efficiency is not free, and the figure's second row is the price.**
+  SAC needs **1.3× (HalfCheetah), 4.6× (Walker2d) and 6.5× (Hopper) of PPO's
+  entire wall clock just to reach PPO's final score** — then keeps climbing.
+  Per environment step SAC dominates; per minute PPO does. One gradient step
+  per env step on 256×256 twin critics costs ~24× PPO's 16 steps per 2048
+  transitions (measured both ways: 72 vs 3 min per 1M under the campaign, and
+  442 vs ~9,900 steps/s solo). Which algorithm is "better" depends entirely on
+  whether samples or compute is the scarce resource — for the Pokémon capstone,
+  where every sample is a websocket round-trip to a Node server, this is the
+  ballgame.
+- **The gap is not an architecture artifact.** SAC's reference nets are 256×256
+  ReLU against PPO's 64×64 Tanh, so a 3-seed HalfCheetah arm re-ran SAC with
+  *PPO's architecture whole*. It keeps **78%** of the reference score
+  (7034 vs 9065) — and still beats PPO by 5.1× on matched environments and 2.9×
+  against PPO-normalized. Architecture is a real but minority contributor.
+  Limitation: one environment, so this says "on HalfCheetah", not in general.
+- **SAC's deterministic-eval premium is much smaller than PPO's** — +7.3% vs
+  +12.0% on HalfCheetah, +5.2% vs +32.1% on Walker2d. That inverts the naive
+  guess. SAC's policy is deliberately stochastic, so you would expect removing
+  the noise to help *more*; instead entropy is in SAC's objective, so it is
+  optimized to perform while noisy, whereas PPO's Gaussian exploration is pure
+  tax at evaluation time. The literature states this direction without
+  publishing a number.
+- **Hopper churn is a property of the environment, not the algorithm.** It was
+  the one environment where PPO's best and final checkpoints diverged, which on
+  Phase 2's evidence alone could have been a PPO weakness. SAC churns there too,
+  and harder — all three seeds finish below their peak (2232/2210/1455 against
+  bests of 3584/3402/3287), where PPO's did on one of three. Falling over is
+  terminal and unrecoverable; a replay buffer does not fix that.
+- **Normalization buys PPO stability, not just score.** The control was built to
+  price the environment stack and answered a second question for free: PPO-raw
+  loses 20–55% of its return, and on Walker2d its seed spread explodes from
+  ±284 to ±563, with one seed reaching only 620 against another's 1907.
+
+Caveats stated rather than buried:
+
+- **The wall-clock axis was measured under concurrency** — both PPO arms 9-wide,
+  SAC 12-wide on the same 14-core machine — so the 24× is approximate. It is
+  corroborated by the solo throughput measurement (22×) rather than resting on
+  the campaign alone.
+- **Three seeds still cannot separate close results.** Hopper's 1.1× over
+  PPO-normalized sits well inside a ±522 spread and should be read as a tie.
+- **The two algorithms differ in more than their update rule.** Nets, learning
+  rates and environment stack all follow each algorithm's own reference recipe.
+  That is deliberate — the alternative is inventing a hybrid neither literature
+  supports — but "SAC beats PPO" here means the recipes as published, not the
+  objectives in isolation. The architecture arm quantifies one of those
+  differences; the PPO-raw control quantifies another.
 
 ## Setup
 
