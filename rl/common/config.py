@@ -23,6 +23,13 @@ class Config:
     # the train loop picks the collection path from the agent class, not
     # from this value. Scalar agents ignore it.
     num_envs: int = 1
+    # Env-stack normalization (continuous track). Harness fields rather than
+    # agent hparams: they are properties of the env wrapper chain, and their
+    # statistics are checkpointed alongside the policy. Default off, so every
+    # discrete-track config and checkpoint predating them is untouched — the
+    # spine's no-op proof is that the wrappers are never constructed.
+    normalize_obs: bool = False
+    normalize_reward: bool = False
     # Intra-op torch threads. 1 by default: per-step RL kernels are tiny, so
     # the default pool thrashes (5x+ measured slowdown), and one core per run
     # is what lets multi-seed benchmarks parallelize. Raise it when the nets
