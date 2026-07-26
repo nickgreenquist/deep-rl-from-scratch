@@ -50,6 +50,16 @@ The other components, each replacing a REINFORCE compromise:
   critic is never masked: V(s) is a property of the state, not the
   action set.
 
+Box action spaces select a diagonal Gaussian policy (see GaussianActor)
+instead of a Categorical, by the same no-config-key rule the obs rank uses.
+That is the entire algorithmic difference between the two tracks: GAE, the
+clipped surrogate, the epoch/minibatch loop, the advantage normalization and
+the grad clip are shared verbatim, because PPO's objective is written over
+log-probabilities and never cares which distribution produced them. What
+changes around it is the env stack — unbounded continuous observations and
+returns need normalizing (rl/envs/normalize.py), where MinAtar's binary
+planes and 0/1 rewards did not.
+
 Rank-3 observations (MinAtar's binary planes) select a conv trunk instead
 of the MLP, by the same no-config-key rule DQN uses. Both heads get their
 own `ConvQNet` — the DQN campaign's exact architecture, so the discrete
@@ -65,11 +75,18 @@ Deliberately omitted (locked 2026-07-25 after review, see PLAN.md):
   Andrychowicz et al. 2021 found it can hurt. The omission rests on that
   ablation evidence alone — *not* on the separate-nets argument, since
   PureJaxRL ships value clipping with separate nets.
-- Reward/return normalization: the one omitted knob with positive ablation
-  evidence (Engstrom et al. 2020), scoped out so PPO and DQN consume an
+- Reward/return normalization: an omitted knob with positive ablation
+  evidence (Engstrom et al. 2020 found it significant, alongside Adam lr
+  annealing and orthogonal init), scoped out so PPO and DQN consume an
   identical reward stream on MinAtar.
 - Observation normalization: MinAtar planes are already binary 0/1; the
   37-details item targets unbounded continuous observations.
+
+Both normalization omissions are scoped to the DISCRETE track and are lifted
+on the continuous one, where the configs turn them on: MuJoCo observations
+are unbounded and its returns grow with the policy. They live in the env
+stack (rl/envs/normalize.py), not in here, so Phase 3's SAC comparison can
+hold them fixed.
 
 Note on value_coef: with disjoint actor/critic parameters and Adam, scaling
 the value loss barely changes the critic's own updates (Adam renormalizes
@@ -87,7 +104,7 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 from torch import nn
-from torch.distributions import Categorical
+from torch.distributions import Categorical, Normal
 
 from rl.agents.base import Agent
 from rl.buffers.rollout import RolloutBuffer, compute_gae
@@ -147,6 +164,38 @@ def _orthogonal_init(net: nn.Module, head_gain: float) -> None:
         nn.init.zeros_(layer.bias)
 
 
+class GaussianActor(nn.Module):
+    """Diagonal Gaussian policy for Box action spaces: an MLP mean, plus a
+    state-INDEPENDENT log standard deviation.
+
+    The scale is a bare parameter rather than a second network head, and that
+    choice is load-bearing for Phase 3 rather than incidental. A
+    state-dependent scale head is exactly what SAC uses (where it also needs
+    the tanh log-det-Jacobian correction), so adopting one here would make
+    the PPO-vs-SAC comparison differ in more than the algorithm — the same
+    hold-everything-fixed discipline that made the discrete headline clean.
+    It is also the reference choice (CleanRL, SB3), and Andrychowicz et al.
+    2021 found no clear benefit either way.
+
+    log_std init 0 (std 1) follows the CleanRL recipe. Note the published
+    evidence mildly favours std 0.5: that is the pre-registered first probe
+    lever if MuJoCo curves stall, not a silent default change.
+
+    Deliberately unsquashed: actions are sampled from an unbounded Normal and
+    clipped to the action space by the env wrapper, while the log-prob is
+    always taken of the RAW sample. Squashing with tanh is SAC's machinery.
+    """
+
+    def __init__(self, mean_net: nn.Module, act_dim: int):
+        super().__init__()
+        self.mean = mean_net
+        self.log_std = nn.Parameter(torch.zeros(act_dim))
+
+    def forward(self, obs: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+        mean = self.mean(obs)
+        return mean, self.log_std.exp().expand_as(mean)
+
+
 class PPOAgent(Agent):
     vectorized = True
 
@@ -172,8 +221,20 @@ class PPOAgent(Agent):
         # A flat obs vector or channel-first image planes, same rule as DQN.
         if not isinstance(observation_space, gym.spaces.Box) or len(observation_space.shape) not in (1, 3):
             raise TypeError("PPOAgent requires a flat or channel-first image Box observation space")
-        if not isinstance(action_space, gym.spaces.Discrete):
-            raise TypeError("PPOAgent requires a Discrete action space")
+        # Action-space type picks the policy distribution, fixed here at
+        # construction — algorithm code below branches on `self.continuous`
+        # and never on a runtime value, so the discrete path stays
+        # unconditionally masked (see rl/common/masking.py).
+        if isinstance(action_space, gym.spaces.Box):
+            if len(action_space.shape) != 1:
+                raise TypeError("continuous PPOAgent requires a flat Box action space")
+            self.continuous = True
+        elif isinstance(action_space, gym.spaces.Discrete):
+            self.continuous = False
+        else:
+            raise TypeError("PPOAgent requires a Discrete or flat Box action space")
+        if self.continuous and len(observation_space.shape) != 1:
+            raise TypeError("continuous PPOAgent requires a flat observation space")
         self.device = torch.device(device)
         self.gamma = gamma
         self.gae_lambda = gae_lambda
@@ -202,7 +263,17 @@ class PPOAgent(Agent):
             def build(out_dim: int) -> nn.Module:
                 return mlp(observation_space.shape[0], hidden_sizes, out_dim, activation=nn.Tanh)
 
-        self.actor = build(int(action_space.n))
+        if self.continuous:
+            # The mean trunk is the same `build` the discrete head uses, so
+            # architecture, activation and init are shared; GaussianActor only
+            # adds the scale parameter. _orthogonal_init still sees the mean
+            # head as the last Linear in module order (log_std is a Parameter,
+            # not a module, so the Linear/Conv2d filter skips it) and the
+            # 0.01 head gain lands where it should.
+            act_dim = int(action_space.shape[0])
+            self.actor = GaussianActor(build(act_dim), act_dim)
+        else:
+            self.actor = build(int(action_space.n))
         self.critic = build(1)
         _orthogonal_init(self.actor, head_gain=0.01)
         _orthogonal_init(self.critic, head_gain=1.0)
@@ -212,14 +283,16 @@ class PPOAgent(Agent):
         # canonical PPO detail (shipped by every reference implementation).
         self.params = [*self.actor.parameters(), *self.critic.parameters()]
         self.optimizer = torch.optim.Adam(self.params, lr=lr, eps=1e-5)
+        action_storage = (
+            {"action_shape": (act_dim,), "action_dtype": np.float32} if self.continuous
+            else {"action_shape": (), "action_dtype": np.int64, "n_actions": int(action_space.n)}
+        )
         self.buffer = RolloutBuffer(
             rollout_steps,
             num_envs,
             observation_space.shape,
             obs_dtype=observation_space.dtype,
-            action_shape=(),
-            action_dtype=np.int64,
-            n_actions=int(action_space.n),
+            **action_storage,
         )
         self.updates = 0  # completed fill -> epochs cycles
 
@@ -232,10 +305,22 @@ class PPOAgent(Agent):
         # not an unconditional unsqueeze. The (A,) mask broadcasts over the
         # (1, A) logits fine.
         obs_t = torch.as_tensor(obs, dtype=torch.float32, device=self.device)
-        mask_t = torch.as_tensor(action_mask, dtype=torch.bool, device=self.device)
         single = obs_t.ndim == self.obs_rank
         if single:
             obs_t = obs_t.unsqueeze(0)
+        if self.continuous:
+            # Before any mask handling: Box envs carry no mask at all, and
+            # torch.as_tensor(None) raises.
+            with torch.no_grad():
+                mean, std = self.actor(obs_t)
+                # The mode of a Gaussian is its mean — the eval-time policy.
+                # Unbounded on purpose: the env's ClipAction wrapper bounds
+                # what the simulator sees, while what the policy DREW is what
+                # gets stored and log-prob'd.
+                actions = mean if deterministic else Normal(mean, std).sample()
+            out = actions.cpu().numpy()
+            return out[0] if single else out  # (act_dim,) or (N, act_dim)
+        mask_t = torch.as_tensor(action_mask, dtype=torch.bool, device=self.device)
         with torch.no_grad():
             logits = masked_logits(self.actor(obs_t), mask_t)
         if deterministic:
@@ -245,6 +330,24 @@ class PPOAgent(Agent):
         if single:
             return int(actions.item())  # (1,) -> the scalar the scalar loop wants
         return actions.cpu().numpy()
+
+    def _logp_entropy(
+        self, obs: torch.Tensor, actions: torch.Tensor, masks: torch.Tensor | None
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """log pi(a|s) and H(pi(.|s)) for a batch, both shaped (B,).
+
+        The one place the two action spaces fork during optimization, so the
+        surrogate, the recompute and the entropy bonus cannot drift apart.
+        A diagonal Gaussian's components are independent, so its joint
+        log-prob and entropy are sums over the action dimensions — the sum
+        that turns (B, act_dim) into the (B,) the surrogate needs.
+        """
+        if self.continuous:
+            dist = Normal(*self.actor(obs))
+            return dist.log_prob(actions).sum(-1), dist.entropy().sum(-1)
+        logits = self.actor(obs)
+        dist = Categorical(logits=masked_logits(logits, masks))
+        return dist.log_prob(actions), masked_entropy(logits, masks)
 
     def update(self, batch: Any) -> dict[str, float]:
         # The vector loop hands one batched (N-wide) transition row per env
@@ -266,8 +369,17 @@ class PPOAgent(Agent):
         flat_next_obs = torch.as_tensor(
             buf.next_obs, dtype=torch.float32, device=self.device
         ).flatten(0, 1)
-        flat_actions = torch.as_tensor(buf.actions, device=self.device).reshape(-1)
-        flat_masks = torch.as_tensor(buf.masks, device=self.device).flatten(0, 1)  # (T*N, A) bool
+        # flatten(0, 1), never reshape(-1): discrete actions are (T, N) and
+        # both spellings agree, but continuous actions are (T, N, act_dim) and
+        # reshape(-1) would silently collapse them to 1-D. Normal.log_prob
+        # then broadcasts that vector against the (T*N, act_dim) mean — at
+        # act_dim 1 into a square matrix whose .sum(-1) is correctly shaped
+        # garbage, so a Pendulum-only test suite would never notice.
+        flat_actions = torch.as_tensor(buf.actions, device=self.device).flatten(0, 1)
+        flat_masks = (
+            None if self.continuous
+            else torch.as_tensor(buf.masks, device=self.device).flatten(0, 1)  # (T*N, A) bool
+        )
         with torch.no_grad():
             # Recomputed at update start, not stored during collection: exact
             # (the policy hasn't changed since it acted — same argument as
@@ -277,10 +389,8 @@ class PPOAgent(Agent):
             # epoch's forward applies below, so the first ratio is exactly 1.
             values = self.critic(flat_obs).squeeze(-1).view(horizon, num_envs)
             next_values = self.critic(flat_next_obs).squeeze(-1).view(horizon, num_envs)
-            old_logp = (
-                Categorical(logits=masked_logits(self.actor(flat_obs), flat_masks))
-                .log_prob(flat_actions)
-                .view(horizon, num_envs)
+            old_logp = self._logp_entropy(flat_obs, flat_actions, flat_masks)[0].view(
+                horizon, num_envs
             )
         advantages_t = torch.as_tensor(
             compute_gae(
@@ -327,13 +437,15 @@ class PPOAgent(Agent):
                 # Every epoch reapplies the stored mask: pi_new must be masked
                 # exactly like the pi_old above, or the ratio is silently
                 # wrong (all-True leaves the logits bitwise untouched).
-                raw_logits = self.actor(flat_obs[idx])
-                dist = Categorical(logits=masked_logits(raw_logits, flat_masks[idx]))
+                new_logp, entropies = self._logp_entropy(
+                    flat_obs[idx], flat_actions[idx],
+                    None if self.continuous else flat_masks[idx],
+                )
                 policy_loss, approx_kl, clip_frac = clipped_surrogate_loss(
-                    dist.log_prob(flat_actions[idx]), flat_old_logp[idx], mb_adv, self.clip_eps
+                    new_logp, flat_old_logp[idx], mb_adv, self.clip_eps
                 )
                 value_loss = F.mse_loss(self.critic(flat_obs[idx]).squeeze(-1), flat_targets[idx])
-                entropy = masked_entropy(raw_logits, flat_masks[idx]).mean()
+                entropy = entropies.mean()
                 loss = policy_loss + self.value_coef * value_loss - self.entropy_coef * entropy
 
                 self.optimizer.zero_grad()
@@ -348,6 +460,12 @@ class PPOAgent(Agent):
                 sums["loss/entropy"] += float(entropy.item())
                 sums["loss/approx_kl"] += float(approx_kl.item())
                 sums["loss/clip_frac"] += float(clip_frac.item())
+                if self.continuous:
+                    # The exploration readout on this track: with a free
+                    # log_std the entropy bonus is off (ent_coef 0 on MuJoCo),
+                    # so the scale is what exploration actually rides on, and
+                    # an early collapse toward 0 is the failure signature.
+                    sums["loss/policy_std"] += float(self.actor.log_std.exp().mean().item())
                 grad_steps += 1
 
         self.buffer.clear()
