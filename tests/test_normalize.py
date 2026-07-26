@@ -147,20 +147,30 @@ def test_reward_wrapper_counts_the_terminal_return_then_resets_on_any_done():
     env = NormalizeReward(make_vec_env("Pendulum-v1", 0, 1), gamma=1.0)
     env.reset(seed=0)
     action = np.zeros((1, 1), dtype=np.float32)
-    for _ in range(199):
-        _, _, _, truncated, _ = env.step(action)
-        assert not truncated[0]
-    accumulated = env.returns[0]  # 199 steps of accumulation, pre-terminal
 
-    _, _, _, truncated, infos = env.step(action)  # step 200: truncation
+    # Mirror the correct order step for step, and compare the resulting
+    # statistics — asserting on the wrapper's own accumulator would not
+    # discriminate, since both orders leave it at zero after a done.
+    reference = RunningMeanStd(())
+    returns = np.zeros(1)
+    boundaries = 0
+    for _ in range(205):  # past Pendulum's 200-step truncation
+        _, _, _, truncated, infos = env.step(action)
+        returns = returns * 1.0 + infos["raw_reward"]  # accumulate...
+        reference.update(returns)  # ...record the sample, terminal one included...
+        if truncated[0]:
+            returns[:] = 0.0  # ...and only then clear
+            boundaries += 1
+            # Autoreset is disabled, so the loop resets finished rows itself.
+            env.reset(options={"reset_mask": np.array([True])})
 
-    assert truncated[0]
-    # The terminal step's return DID enter the statistics...
-    terminal_return = accumulated + infos["raw_reward"][0]
-    assert env.rms.mean != pytest.approx(0.0)
-    assert abs(terminal_return) > abs(accumulated)  # it is the largest sample
-    # ...and only afterwards was the accumulator cleared.
-    assert env.returns[0] == 0.0
+    assert boundaries == 1  # the boundary really was crossed
+    assert env.rms.count == pytest.approx(reference.count)
+    assert env.rms.mean == pytest.approx(reference.mean)
+    assert env.rms.var == pytest.approx(reference.var)
+    # The terminal sample dominates: dropping it (the draft's bug) moves the
+    # mean by far more than the tolerance above.
+    assert abs(reference.mean) > 100.0
     env.close()
 
 
