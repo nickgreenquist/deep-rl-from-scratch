@@ -22,6 +22,7 @@ from rl.agents.ppo import PPOAgent
 from rl.agents.q_learning import QLearningAgent
 from rl.agents.random_agent import RandomAgent
 from rl.agents.reinforce import ReinforceAgent
+from rl.agents.sac import SACAgent
 from rl.common.checkpoint import save_checkpoint
 from rl.common.config import Config, load_config, run_dir
 from rl.common.evaluation import evaluate
@@ -44,6 +45,7 @@ ALGOS: dict[str, type[Agent]] = {
     "dqn": DQNAgent,
     "reinforce": ReinforceAgent,
     "ppo": PPOAgent,
+    "sac": SACAgent,
 }
 
 
