@@ -20,6 +20,28 @@
 #
 # Numbers are halfcheetah_sac.yaml unchanged apart from the budget, so the gate
 # tests the recipe about to be benchmarked rather than a different one.
+#
+# RESULT 2026-07-26 (seed 0, sha 281096b, 100 s): PASSED with room to spare.
+# eval climbs -1332 @5k -> -109 @10k and then sits flat at ~-108 for the
+# remaining 40k. For scale, our PPO reached -136 on this env at 150k steps, so
+# SAC gets a better score in roughly a fifteenth of the samples — the phase's
+# whole thesis, visible on the cheapest env we own. Health: alpha decays
+# 0.998 -> 0.007 (two orders of magnitude); loss/entropy converges to -1.107
+# against a target entropy of exactly -1, which is the temperature loop doing
+# precisely its job; policy_std 0.595 -> 0.243 with no early collapse; critic
+# loss 96 -> 1.4; q_pred_mean settles at -27, negative as Pendulum's cost-style
+# rewards require, and finite.
+#
+# TWO READINGS WORTH CARRYING TO THE PATHFINDER:
+#   time/steps_per_sec must be judged over the POST-WARM-UP window only. The
+#     first 5000 steps take no gradient step and run at ~55,000 steps/s against
+#     ~460 afterwards, so a whole-run average reads 6030 and means nothing.
+#     Same shape of rule as chunk 4's "judge clip_frac over the peak-lr window".
+#   loss/mu_absmax reaches 7.7. That was added to settle whether a converged
+#     policy really enters the saturated regime where the naive tanh correction
+#     breaks down — it does: the epsilon-floored form starts distorting around
+#     |u| ~ 7.6 and its gradient is dead by 9. The stable form was not
+#     defensive programming.
 env_id: Pendulum-v1
 seed: 0
 total_steps: 50000
