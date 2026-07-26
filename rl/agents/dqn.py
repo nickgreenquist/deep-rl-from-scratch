@@ -147,8 +147,14 @@ class DQNAgent(Agent):
             )
         else:
             raise ValueError(f"unknown optimizer {optimizer!r}")
+        # Keyword args, not positional: the buffer's signature carries action
+        # shape/dtype now (the continuous track), so a positional call would
+        # silently bind n_actions to obs_dtype.
         self.buffer = ReplayBuffer(
-            buffer_capacity, observation_space.shape, n_actions, observation_space.dtype
+            buffer_capacity,
+            observation_space.shape,
+            obs_dtype=observation_space.dtype,
+            n_actions=n_actions,
         )
         self.accumulator = NStepAccumulator(n_step, gamma)
         self.double = double
