@@ -1,0 +1,47 @@
+
+# SAC on Pendulum-v1 — Phase 3's sanity gate, the cheap run that exercises
+# every new code path before any MuJoCo compute is spent: the squashed
+# Gaussian, the tanh Jacobian correction, twin critics, Polyak updates, the
+# temperature loop, and the warm-up branch.
+#
+# GATE, stated up front so a weak result is not mistaken for a bug: eval return
+# >= -300 and improving. SAC solves Pendulum comfortably in the literature, so
+# this is deliberately loose rather than a target — chunk 5's lesson, where a
+# conservative gate kept a fine result from triggering a bug hunt.
+#
+# It is also the only env in the phase whose action scale is not 1
+# (Pendulum is Box(-2, 2), so scale = 2), which makes it the one live check on
+# the -sum(log scale) term in the log-prob outside the unit tests. Note what it
+# still CANNOT see: action_bias is 0 here as everywhere, terminated is never
+# True, and act_dim is 1 — so bias bugs, the terminal bootstrap mask, and any
+# per-action-dimension shape bug are all invisible. Those are pinned in
+# tests/test_sac.py on synthetic spaces, and Hopper is the first campaign env
+# that exercises termination.
+#
+# Numbers are halfcheetah_sac.yaml unchanged apart from the budget, so the gate
+# tests the recipe about to be benchmarked rather than a different one.
+env_id: Pendulum-v1
+seed: 0
+total_steps: 50000
+eval_every: 5000
+eval_episodes: 10
+run_name: pendulum_sac
+device: cpu
+normalize_obs: false
+normalize_reward: false
+logger: wandb
+agent:
+  algo: sac
+  hidden_sizes: [256, 256]  # separate actor and twin critics, all this shape
+  activation: relu
+  q_lr: 1.0e-3              # also the temperature optimizer's lr
+  policy_lr: 3.0e-4
+  gamma: 0.99
+  tau: 0.005
+  batch_size: 256
+  buffer_capacity: 1000000
+  learning_starts: 5000     # uniform random actions until here
+  policy_frequency: 2
+  target_network_frequency: 1
+  autotune: true            # target entropy is -act_dim, derived not configured
+  alpha: 0.2                # unused while autotune is true
