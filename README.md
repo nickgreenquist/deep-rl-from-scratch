@@ -72,15 +72,17 @@ Findings worth the compute:
 - **Training-time "best eval" checkpoints are winner's-cursed:** a 20-episode best overstates a fresh 100-episode re-eval by ~15% on every variant. Headline numbers use the de-biased protocol (`scripts/eval_checkpoint.py`, disjoint eval seeds).
 - A strong Seaquest policy can survive **indefinitely** under greedy eval (oxygen is renewable and MinAtar registers no time limit) — two diagnostic runs spent 5+ hours inside a single eval episode before the eval protocol gained a 10k-step cap.
 
-What that looks like in play — greedy rollouts from the best Seaquest checkpoint (centered RMSprop, seed 0), recorded with `scripts/record.py`:
+What that looks like in play — greedy rollouts from the best LunarLander checkpoint (seed 0), recorded with `scripts/record.py`:
 
-![Trained DQN playing MinAtar Seaquest: three greedy episodes with a step/return HUD](assets/minatar_seaquest_dqn_rollout.gif)
+![Trained DQN landing in LunarLander: three greedy episodes with a step/return HUD](assets/lunarlander_dqn_rollout.gif)
 
-Three sample episodes scoring 32 / 73 / 36 (greedy play runs well above the ε-contaminated table metric). The 961-step middle episode is the oxygen loop working: shoot fish, pick up divers, surface to trade a diver for a full oxygen bar before it empties — the same loop that, done too well, makes a policy immortal.
+Three episodes scoring 254 / 273 / 266 — all three land on the pad rather than crashing or hovering out the clock, which is the behaviour the 200-point "solved" threshold is meant to capture.
 
 Full experiment log in `PLAN.md`. Every run directory is self-describing — resolved config, git SHA, package versions, W&B history, best + final checkpoints — across the 63 five-million-step runs (~60 core-hours on a laptop CPU) behind these numbers.
 
 ## Results — Phase 2: PPO on MinAtar (and why the on-ramp mattered)
+
+![PPO vs DQN on MinAtar: five training-return panels plus the de-biased re-eval comparison](assets/minatar_ppo_vs_dqn.png)
 
 PPO runs the same harness, the same `-v0` envs, the same 5M-step budget and the
 same conv trunk as the DQN campaign — Conv 16@3×3 → FC 128 — so the comparison
@@ -110,7 +112,14 @@ predict; neither family dominates across environments.
      the Breakout tie stands with both algorithms swept and the "tuning budget" caveat below can be
      narrowed to Freeway only. If it does improve, the Breakout row flips to DQN and the summary line
      above becomes "decisively ahead on two, modestly on one, behind on two". -->
-<!-- TODO: MinAtar PPO-vs-DQN curves figure (assets/minatar_ppo_vs_dqn.png), 5 panels, to sit above the table. -->
+Greedy rollouts from the best PPO Breakout checkpoint (`scripts/record.py`):
+
+![Trained PPO playing MinAtar Breakout: three greedy episodes with a step/return HUD](assets/minatar_breakout_ppo_rollout.gif)
+
+Three episodes scoring 57 / 48 / 28. Watch the paddle track the ball's *trail*
+rather than its current cell — the trail plane is what makes velocity
+observable in a single frame, which is why one conv layer over 10×10 planes is
+enough here and no frame stacking is needed.
 
 Findings worth the compute:
 
