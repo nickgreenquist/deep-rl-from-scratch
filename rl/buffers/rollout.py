@@ -27,14 +27,21 @@ class RolloutBuffer(Buffer):
         horizon: int,
         num_envs: int,
         obs_shape: tuple[int, ...],
-        n_actions: int,
         obs_dtype=np.float32,
+        action_shape: tuple[int, ...] = (),
+        action_dtype=np.int64,
+        n_actions: int | None = None,
     ):
         self.horizon = horizon
         self.num_envs = num_envs
         # Obs arrays take the env dtype (same reasoning as the replay buffer).
         self.obs = np.zeros((horizon, num_envs, *obs_shape), dtype=obs_dtype)
-        self.actions = np.zeros((horizon, num_envs), dtype=np.int64)
+        # Action storage carries the space's own shape and dtype: () / int64
+        # for Discrete, (act_dim,) / float32 for Box. The stored action is the
+        # RAW sample — on the continuous track the env sees a clipped action
+        # (ClipAction wrapper) but the log-prob is always taken of what the
+        # policy actually drew, or the importance ratio would be wrong.
+        self.actions = np.zeros((horizon, num_envs, *action_shape), dtype=action_dtype)
         self.rewards = np.zeros((horizon, num_envs), dtype=np.float32)
         self.next_obs = np.zeros((horizon, num_envs, *obs_shape), dtype=obs_dtype)
         # Floats, not bools: used directly as (1 - flag) masks in compute_gae.
@@ -45,10 +52,16 @@ class RolloutBuffer(Buffer):
         # pi_old must see identically masked distributions or the importance
         # ratio is silently wrong on every sample. (No next-state masks: the
         # critic is the only next_obs reader, and values are never masked.)
-        self.masks = np.zeros((horizon, num_envs, n_actions), dtype=bool)
+        # Allocated only for Discrete spaces: continuous actions have no
+        # legality concept, so `masks is None` here means "Box", a fact fixed
+        # at construction — never a runtime branch inside algorithm code.
+        self.masks = (
+            None if n_actions is None
+            else np.zeros((horizon, num_envs, n_actions), dtype=bool)
+        )
         self._ptr = 0
 
-    def add(self, obs, actions, rewards, next_obs, terminated, truncated, masks) -> None:
+    def add(self, obs, actions, rewards, next_obs, terminated, truncated, masks=None) -> None:
         """Store one batched (N-wide) transition row."""
         t = self._ptr  # IndexError past the horizon: the agent drains at full()
         self.obs[t] = obs
@@ -57,7 +70,8 @@ class RolloutBuffer(Buffer):
         self.next_obs[t] = next_obs
         self.terminated[t] = terminated
         self.truncated[t] = truncated
-        self.masks[t] = masks
+        if self.masks is not None:
+            self.masks[t] = masks
         self._ptr += 1
 
     def full(self) -> bool:

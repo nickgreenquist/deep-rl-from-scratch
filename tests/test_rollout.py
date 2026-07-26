@@ -118,3 +118,23 @@ def test_rollout_buffer_fill_drain_refill():
     buf.add(obs, np.array([1, 1]), np.array([0.5, 0.5]), obs,
             np.array([False, False]), np.array([True, True]), masks)
     assert len(buf) == 2 and buf.truncated[0, 0] == 1.0
+
+
+def test_rollout_buffer_stores_continuous_actions_and_no_masks():
+    """Box spaces: actions keep their own (act_dim,) shape and float dtype,
+    and no mask array is allocated — `masks is None` marks "continuous", a
+    fact fixed at construction so algorithm code never branches on a runtime
+    mask value. act_dim is 2, not 1: a length-1 action vector is
+    shape-degenerate and hides exactly the broadcast bugs this guards."""
+    buf = RolloutBuffer(
+        horizon=2, num_envs=3, obs_shape=(4,), obs_dtype=np.float64,
+        action_shape=(2,), action_dtype=np.float32,
+    )
+    assert buf.actions.shape == (2, 3, 2) and buf.actions.dtype == np.float32
+    assert buf.masks is None
+    obs = np.zeros((3, 4), dtype=np.float64)
+    actions = np.array([[0.5, -0.5], [1.5, -1.5], [2.5, -2.5]], dtype=np.float32)
+    # add() takes no mask on this path.
+    buf.add(obs, actions, np.zeros(3), obs, np.zeros(3, bool), np.zeros(3, bool))
+    np.testing.assert_array_equal(buf.actions[0], actions)
+    assert len(buf) == 3

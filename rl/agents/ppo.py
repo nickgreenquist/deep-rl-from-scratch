@@ -83,6 +83,7 @@ from collections import defaultdict
 from typing import Any
 
 import gymnasium as gym
+import numpy as np
 import torch
 import torch.nn.functional as F
 from torch import nn
@@ -215,8 +216,10 @@ class PPOAgent(Agent):
             rollout_steps,
             num_envs,
             observation_space.shape,
-            int(action_space.n),
-            observation_space.dtype,
+            obs_dtype=observation_space.dtype,
+            action_shape=(),
+            action_dtype=np.int64,
+            n_actions=int(action_space.n),
         )
         self.updates = 0  # completed fill -> epochs cycles
 
