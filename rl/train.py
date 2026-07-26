@@ -28,6 +28,12 @@ from rl.common.evaluation import evaluate
 from rl.common.logging import Logger, make_logger
 from rl.common.seeding import set_seed
 from rl.envs.make import make_env, make_vec_env
+from rl.envs.normalize import (
+    FrozenNormalizeObservation,
+    NormalizeObservation,
+    NormalizeReward,
+    RunningMeanStd,
+)
 
 
 # Algo registry: make_agent constructs from it, and train() reads the class's
@@ -113,11 +119,34 @@ def train(cfg: Config) -> None:
     # error. Eval always runs a single scalar env either way.
     agent_cls = ALGOS.get(cfg.agent.get("algo"))
     vectorized = agent_cls is not None and agent_cls.vectorized
+    if (cfg.normalize_obs or cfg.normalize_reward) and not vectorized:
+        # The normalizers are vector-level wrappers. Silently ignoring the
+        # flags would still stamp them into the run's config snapshot, and
+        # every checkpoint from that "successful" run would then refuse to
+        # re-evaluate (frozen_obs_env raises on missing statistics).
+        raise ValueError(
+            f"normalize_obs/normalize_reward need a vectorized algorithm; "
+            f"{cfg.agent.get('algo')!r} runs the scalar loop"
+        )
     if vectorized:
         env = make_vec_env(cfg.env_id, cfg.seed, cfg.num_envs)
     else:
         env = make_env(cfg.env_id, cfg.seed)
     eval_env = make_env(cfg.env_id, cfg.seed)  # eval reseeds per episode
+    # Normalization statistics are shared, not copied: the eval env reads the
+    # training env's live RunningMeanStd but never updates it, so each eval
+    # pass scores the policy under the statistics it is currently training
+    # against. They are checkpointed at every save (see save_checkpoint).
+    normalizers: dict[str, RunningMeanStd] = {}
+    if cfg.normalize_obs:
+        env = NormalizeObservation(env)
+        normalizers["obs"] = env.rms
+        eval_env = FrozenNormalizeObservation(eval_env, env.rms)
+    if cfg.normalize_reward:
+        # Reward scaling is a training-time device only — eval returns are
+        # always reported in true env units.
+        env = NormalizeReward(env, gamma=cfg.agent["gamma"])
+        normalizers["reward"] = env.rms
     agent = make_agent(cfg, env)
     out_dir = run_dir(cfg)
     # Before the logger: even a run that dies in wandb.init leaves a stamped dir.
@@ -125,7 +154,7 @@ def train(cfg: Config) -> None:
     logger = make_logger(cfg)
 
     if vectorized:
-        _vector_loop(cfg, env, eval_env, agent, logger, out_dir)
+        _vector_loop(cfg, env, eval_env, agent, logger, out_dir, normalizers)
     else:
         _scalar_loop(cfg, env, eval_env, agent, logger, out_dir)
 
@@ -211,6 +240,7 @@ def _vector_loop(
     agent: Agent,
     logger: Logger,
     out_dir: Path,
+    normalizers: dict[str, RunningMeanStd] | None = None,
 ) -> None:
     """N lockstep envs, batched transitions — vectorized (on-policy) agents.
 
@@ -246,7 +276,13 @@ def _vector_loop(
         )
         if update_metrics:
             logger.log(update_metrics, step)
-        ep_returns += rewards
+        # Episode returns are always accumulated in TRUE env units. With
+        # reward normalization on, `rewards` is scaled by a running statistic
+        # that itself moves during training, so logging it would make
+        # rollout/episode_return incomparable across runs and against every
+        # DQN and discrete-PPO number in the repo. The wrapper republishes the
+        # raw reward; the fallback covers every env without it.
+        ep_returns += infos.get("raw_reward", rewards)
         ep_lengths += 1
         obs = next_obs
         masks = next_masks
@@ -283,10 +319,10 @@ def _vector_loop(
             logger.log(metrics, step)
             if metrics["eval/return_mean"] > best_eval:
                 best_eval = metrics["eval/return_mean"]
-                save_checkpoint(out_dir / "best_checkpoint.pt", agent, step, cfg)
-            save_checkpoint(out_dir / "checkpoint.pt", agent, step, cfg)
+                save_checkpoint(out_dir / "best_checkpoint.pt", agent, step, cfg, normalizers)
+            save_checkpoint(out_dir / "checkpoint.pt", agent, step, cfg, normalizers)
 
-    save_checkpoint(out_dir / "checkpoint.pt", agent, step, cfg)
+    save_checkpoint(out_dir / "checkpoint.pt", agent, step, cfg, normalizers)
 
 
 def main() -> None:

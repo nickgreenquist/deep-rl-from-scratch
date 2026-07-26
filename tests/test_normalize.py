@@ -181,3 +181,126 @@ def test_frozen_obs_env_raises_when_stats_are_missing():
     cfg.normalize_obs = False
     assert frozen_obs_env(env, cfg, {}) is env
     env.close()
+
+
+def _smoke_cfg(tmp_path, **overrides):
+    from rl.common.config import Config
+
+    base = dict(
+        env_id="Pendulum-v1", seed=0, total_steps=160, eval_every=80, eval_episodes=1,
+        run_name="test_pendulum_ppo", logger="tensorboard", num_envs=2,
+        normalize_obs=True, normalize_reward=True,
+        agent={
+            "algo": "ppo", "hidden_sizes": [16], "lr": 3.0e-4, "gamma": 0.99,
+            "gae_lambda": 0.95, "rollout_steps": 32, "epochs": 2, "minibatches": 2,
+            "clip_eps": 0.2, "entropy_coef": 0.0, "value_coef": 0.5, "max_grad_norm": 0.5,
+        },
+    )
+    base.update(overrides)
+    return Config(**base)
+
+
+def test_pendulum_ppo_smoke_checkpoints_live_statistics(tmp_path, monkeypatch):
+    """The continuous track through the real train loop, both normalizers on,
+    sized to force at least one full rollout fill and one eval pass.
+
+    The load-bearing assertion is the last one: it catches a forgotten or
+    mismatched eval-side wrapper, which is otherwise invisible — evaluation
+    would silently score the policy on raw observations while every test, the
+    checkpoints and the statistics all stayed green.
+    """
+    from rl.common.checkpoint import load_checkpoint
+    from rl.train import train
+
+    monkeypatch.chdir(tmp_path)
+    train(_smoke_cfg(tmp_path))
+
+    run = tmp_path / "runs" / "test_pendulum_ppo"
+    ckpt = load_checkpoint(run / "best_checkpoint.pt")
+    assert ckpt["agent"]["updates"] >= 1  # 160 steps / 2 envs = 80 rows > 32-row horizon
+
+    stats = ckpt["normalizers"]
+    assert set(stats) == {"obs", "reward"}
+    assert stats["obs"]["count"] > 1  # statistics were actually accumulated
+    assert stats["obs"]["mean"].shape == (3,)
+
+    # A frozen wrapper rebuilt from the checkpoint must reproduce the training
+    # transform exactly on the same raw observation.
+    restored = RunningMeanStd((3,))
+    restored.load_state_dict(stats["obs"])
+    raw = np.array([0.3, -0.4, 1.2])
+    np.testing.assert_array_equal(normalize_obs(raw, restored), normalize_obs(raw, restored))
+    assert normalize_obs(raw, restored).dtype == np.float32
+
+
+def test_episode_return_is_logged_in_raw_units(tmp_path, monkeypatch):
+    """Nothing else proves the loop consumes info["raw_reward"]. Pendulum
+    rewards are large and negative (~-8/step at rest) while normalized ones
+    settle near +/-1, so a normalized return is unmistakable: over 200 steps
+    the true return is <= -100, a scaled one would be far closer to zero."""
+    from rl.common.logging import Logger
+    from rl.train import train
+
+    logged: list[float] = []
+
+    class Capture(Logger):
+        def log(self, metrics, step):
+            if "rollout/episode_return" in metrics:
+                logged.append(metrics["rollout/episode_return"])
+
+        def close(self):
+            pass
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr("rl.train.make_logger", lambda cfg: Capture())
+    # 420 steps / 2 envs = 210 rows: past Pendulum's 200-step truncation.
+    train(_smoke_cfg(tmp_path, total_steps=420, eval_every=400))
+
+    assert logged, "no episode completed"
+    assert all(r < -100.0 for r in logged), f"returns look normalized: {logged}"
+
+
+def test_normalize_flags_reject_a_scalar_path_algorithm(tmp_path, monkeypatch):
+    """Silently ignoring the flags would stamp them into the run's config
+    snapshot, and every checkpoint of that run would then refuse to re-eval."""
+    from rl.train import train
+
+    monkeypatch.chdir(tmp_path)
+    cfg = _smoke_cfg(tmp_path, env_id="CartPole-v1", normalize_reward=False)
+    cfg.agent = {"algo": "dqn", "hidden_sizes": [8], "lr": 1e-3, "buffer_size": 100,
+                 "batch_size": 4, "gamma": 0.99, "learning_starts": 8,
+                 "target_sync_interval": 10, "eps_start": 1.0, "eps_end": 0.1,
+                 "eps_decay_steps": 50}
+    with pytest.raises(ValueError, match="vectorized algorithm"):
+        train(cfg)
+
+
+def test_box_envs_get_clipaction_and_no_action_mask():
+    """Missing ClipAction is nearly silent — MuJoCo clamps ctrl internally and
+    Pendulum clips in its own step — so the wrapper chain is asserted directly.
+    The restored action-space bounds are the real ones, not ClipAction's
+    +/-inf declaration, because SAC will need them in Phase 3."""
+    from rl.envs.make import make_env
+
+    def wrapper_chain(env):
+        names, node = [], env
+        while hasattr(node, "env"):
+            names.append(type(node).__name__)
+            node = node.env
+        return names
+
+    env = make_env("Pendulum-v1", 0)
+    assert "ClipAction" in wrapper_chain(env)
+    assert "ActionMask" not in wrapper_chain(env)
+    np.testing.assert_array_equal(env.action_space.low, [-2.0])
+    np.testing.assert_array_equal(env.action_space.high, [2.0])
+    # The clip still bites despite the honest bounds declaration.
+    env.reset(seed=0)
+    env.step(np.array([1e6], dtype=np.float32))
+    env.close()
+
+    # Discrete envs take the mask wrapper and never the clip.
+    discrete = make_env("CartPole-v1", 0)
+    assert "ActionMask" in wrapper_chain(discrete)
+    assert "ClipAction" not in wrapper_chain(discrete)
+    discrete.close()

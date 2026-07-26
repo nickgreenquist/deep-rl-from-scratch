@@ -26,6 +26,7 @@ from PIL import Image, ImageDraw, ImageFont
 from rl.common.checkpoint import load_checkpoint
 from rl.common.config import Config
 from rl.envs.make import make_env
+from rl.envs.normalize import frozen_obs_env
 from rl.train import make_agent
 
 TARGET_WIDTH = 320  # upscale small playfields (MinAtar is 10x10) to at least this
@@ -70,7 +71,9 @@ def main() -> None:
     ckpt = load_checkpoint(args.checkpoint)
     cfg = Config(**ckpt["config"])
     torch.set_num_threads(cfg.torch_threads)
-    env = make_env(cfg.env_id, cfg.seed, render_mode="rgb_array")
+    # Frozen statistics for normalized runs; render frames are unaffected
+    # (the wrapper transforms observations, not pixels).
+    env = frozen_obs_env(make_env(cfg.env_id, cfg.seed, render_mode="rgb_array"), cfg, ckpt)
     agent = make_agent(cfg, env)
     agent.load_state_dict(ckpt["agent"])
 

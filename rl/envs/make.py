@@ -27,6 +27,23 @@ def make_env(env_id: str, seed: int, render_mode: str | None = None) -> gym.Env:
         # ChannelFirst.observation, remain directly reachable) and ActionMask
         # touches only infos, which pass through them unchanged.
         env = ActionMask(env)
+    else:
+        # Continuous track: the Gaussian policy samples from an unbounded
+        # Normal, so actions must be clipped to the env's valid range before
+        # they reach the simulator. Explicit rather than leaning on MuJoCo
+        # clamping ctrl internally — and the policy still takes the log-prob
+        # of the RAW sample, which is why clipping belongs here and not in
+        # the agent.
+        bounds = env.action_space
+        env = gym.wrappers.ClipAction(env)
+        # ClipAction re-declares its action space as Box(-inf, inf) ("the
+        # actions it will accept"). The clip itself closes over the inner
+        # env's real bounds, so restoring the honest declaration changes no
+        # behavior — and keeps it readable by anything that needs the true
+        # range: action_space.sample() for the random agent today, and the
+        # squashed policy SAC brings in Phase 3.
+        env.action_space = bounds
+
     if env_id.startswith("MinAtar/"):
         env = ChannelFirst(env)  # (10, 10, C) planes -> torch's (C, 10, 10)
     env.action_space.seed(seed)

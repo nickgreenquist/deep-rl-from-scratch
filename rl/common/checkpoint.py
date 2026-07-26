@@ -12,13 +12,23 @@ from rl.agents.base import Agent
 from rl.common.config import Config
 
 
-def save_checkpoint(path: str | Path, agent: Agent, step: int, cfg: Config) -> None:
+def save_checkpoint(
+    path: str | Path, agent: Agent, step: int, cfg: Config, normalizers: dict | None = None
+) -> None:
+    """`normalizers` maps a name to a RunningMeanStd whose statistics are read
+    HERE, at save time, so a checkpoint always carries the statistics that
+    were live when its weights were saved. Without them a restored policy is
+    evaluated against the wrong observation scale — which does not crash, it
+    just quietly scores badly."""
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
+    payload = {"agent": agent.state_dict(), "step": step, "config": asdict(cfg)}
+    if normalizers:
+        payload["normalizers"] = {name: rms.state_dict() for name, rms in normalizers.items()}
     # Write-then-rename: a run killed mid-save must not leave a truncated
     # file where a good checkpoint used to be.
     tmp = path.with_name(path.name + ".tmp")
-    torch.save({"agent": agent.state_dict(), "step": step, "config": asdict(cfg)}, tmp)
+    torch.save(payload, tmp)
     tmp.replace(path)
 
 

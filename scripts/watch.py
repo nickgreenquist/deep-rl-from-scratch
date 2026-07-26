@@ -12,6 +12,7 @@ import time
 from rl.common.checkpoint import load_checkpoint
 from rl.common.config import Config
 from rl.envs.make import make_env
+from rl.envs.normalize import frozen_obs_env
 from rl.train import make_agent
 
 
@@ -33,6 +34,9 @@ def main() -> None:
     if args.fps:
         # The human renderer paces its clock off this metadata entry.
         env.unwrapped.metadata["render_fps"] = args.fps
+    # Normalized runs must be watched through their own statistics, or the
+    # policy sees observations on a scale it never trained on.
+    env = frozen_obs_env(env, cfg, ckpt)
     agent = make_agent(cfg, env)
     agent.load_state_dict(ckpt["agent"])
 
