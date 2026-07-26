@@ -7,7 +7,7 @@ The project has two parts:
 - **Spine:** DQN → PPO → SAC, each a standalone milestone with a headline metric against a published baseline. Vanilla DQN is discrete-only and SAC is continuous-only, so the suite runs on two tracks with PPO as the bridge:
   - **Discrete** (DQN vs PPO): CartPole / LunarLander for sanity checks, then MinAtar.
   - **Continuous** (PPO vs SAC): MuJoCo locomotion (HalfCheetah, Hopper, Walker2d).
-- **Capstone:** the best-performing algorithm pointed at one substantial environment with published baselines. Environment TBD.
+- **Capstone:** Pokémon Showdown Gen 1 singles (battle phase only) via poke-env against a local Showdown server, with PPO + self-play. A Connect 4 self-play on-ramp comes first, so the self-play loop, checkpoint pool and Elo harness are built and validated somewhere a run takes minutes and a solver gives ground truth.
 
 ## Layout
 
@@ -45,9 +45,10 @@ python -m rl.train --config configs/<run>.yaml
 |------:|-------------|--------|
 | 0 | Repo + shared harness; random-policy pipeline check on CartPole; tabular Q-learning on FrozenLake | done — Q-learning hits 0.67 success on slippery FrozenLake (random: 0.02, optimal: ~0.74) |
 | 1 | DQN (replay buffer, target network, ε-greedy; Double/Dueling/n-step as toggles) | done — reproduces the MinAtar paper's DQN on all 5 games (see Results); solves CartPole/LunarLander at peak |
-| 2 | PPO (GAE, clipped objective, entropy bonus, vectorized rollouts) | planned |
+| 2 | PPO (GAE, clipped objective, entropy bonus, vectorized rollouts) | discrete track done — beats DQN on 3 of 5 MinAtar games (see Results); continuous track next |
 | 3 | SAC (twin critics, reparameterized actor, auto-tuned entropy temperature) | planned |
-| 4 | Capstone vs published baseline | planned — env TBD |
+| 4 | Connect 4 self-play on-ramp: opponent pool, checkpoint Elo harness | planned |
+| 5 | Capstone: Pokémon Showdown Gen 1 via PPO + self-play | planned |
 
 ## Results — Phase 1: DQN on MinAtar
 
@@ -78,6 +79,99 @@ What that looks like in play — greedy rollouts from the best Seaquest checkpoi
 Three sample episodes scoring 32 / 73 / 36 (greedy play runs well above the ε-contaminated table metric). The 961-step middle episode is the oxygen loop working: shoot fish, pick up divers, surface to trade a diver for a full oxygen bar before it empties — the same loop that, done too well, makes a policy immortal.
 
 Full experiment log in `PLAN.md`. Every run directory is self-describing — resolved config, git SHA, package versions, W&B history, best + final checkpoints — across the 63 five-million-step runs (~60 core-hours on a laptop CPU) behind these numbers.
+
+## Results — Phase 2: PPO on MinAtar (and why the on-ramp mattered)
+
+PPO runs the same harness, the same `-v0` envs, the same 5M-step budget and the
+same conv trunk as the DQN campaign — Conv 16@3×3 → FC 128 — so the comparison
+holds architecture fixed and varies only the algorithm. 30 runs, 5 games × 2
+candidate learning rates × 3 seeds, ~55 minutes wall-clock.
+
+**The headline is the de-biased 100-episode greedy re-eval**, not training
+return. DQN's training return pays a constant ε=0.1 exploration tax while PPO's
+pays a sampling tax that shrinks as entropy falls, so cross-algorithm gaps in
+training return are exploration-mechanism artifacts. The re-eval taxes both
+identically. Each algorithm is shown at its best-known configuration:
+
+| Game | PPO (lr 1e-3) | DQN best-known | Verdict |
+|---|---|---|---|
+| Space Invaders | **276.9 ± 37.9** | 90.7 (RMSprop) | PPO **3×** |
+| Asterix | **31.5 ± 1.2** | 25.6 (RMSprop lr 1e-4) | PPO +23% |
+| Freeway | **61.3 ± 0.5** | 59.3 (RMSprop) | PPO modest |
+| Breakout | 25.9 ± 2.6 | 25.1 (n-step 3) | tie |
+| Seaquest | 24.5 ± **19.4** | **28.7** (RMSprop) | DQN — PPO unreliable |
+
+Mean ± std across 3 seeds. **PPO wins decisively on two games, modestly on one,
+ties one, and loses one** — a mixed result, which is what the literature would
+predict; neither family dominates across environments.
+
+<!-- TODO (in flight): fold in the DQN Breakout lr probe — configs/minatar_breakout_dqn_{lr5e4,lr1e3}.yaml,
+     3 seeds each, seeds 0/1/2 paired against the vanilla runs. If DQN does not improve at higher lr,
+     the Breakout tie stands with both algorithms swept and the "tuning budget" caveat below can be
+     narrowed to Freeway only. If it does improve, the Breakout row flips to DQN and the summary line
+     above becomes "decisively ahead on two, modestly on one, behind on two". -->
+<!-- TODO: MinAtar PPO-vs-DQN curves figure (assets/minatar_ppo_vs_dqn.png), 5 panels, to sit above the table. -->
+
+Findings worth the compute:
+
+- **Seaquest is a coin flip, not a loss.** Per-seed re-evals are 15.5 / 6.6 /
+  **51.4** — one seed roughly doubles DQN's best, two don't. The ±19.4 is the
+  point. (Checked: the outlier is genuinely stronger play at ~656-step episodes,
+  not the degenerate immortal-but-scoreless policy that ate two Phase 1 runs.)
+- **Throughput inverts the usual story.** PPO finishes 5M steps in ~9–12 min
+  against DQN's ~55, because it takes 16 gradient steps per 1024 transitions
+  where DQN takes ~1024. On a fixed *sample* budget replay is the more efficient
+  learner; on fixed wall-clock, on-policy with vectorized envs wins outright.
+- **PPO holds its final policy; DQN churns.** PPO's final checkpoint re-evals at
+  or above its own best-selected checkpoint (Breakout: final 25.9 vs best 24.9 —
+  the winner's curse on a 20-episode selection), where vanilla DQN gives back
+  ~2.5 points between best and final. With the lr anneal off, that stability is
+  a real property rather than a schedule artifact.
+- **A mis-tuned learning rate is indistinguishable from a bug.** The originally
+  locked config (lr 2.5e-4 annealed to zero over 5M) plateaued on Breakout at
+  ~5.0 while *every health diagnostic read green* — clip_frac 0.087 inside its
+  band, approx_kl 2e-3, entropy declining smoothly, value loss falling. It took
+  a four-way disproof — CartPole reproducing the previous phase's eval sequence
+  exactly, critic-vs-return correlation 1.000, a state-responsive actor, healthy
+  unit statistics — to rule out a defect before sweeping the lr. The anneal was
+  the trap: it put the *time-averaged* lr at 1.25e-4, and an independent
+  implementation (gymnax) publishes a Breakout sweep that sits flat for a full
+  10M steps at exactly that value. Raising lr to 1e-3 and turning the anneal off
+  moved Breakout from 5.5 to 25.9.
+- **clip_frac being in-band does not mean the lr is right.** It measures how far
+  each update moves relative to the clip threshold, not whether learning is fast
+  enough. It is a safety diagnostic, not a sufficiency one — a distinction that
+  cost an afternoon.
+
+Two caveats stated rather than buried:
+
+- **Unmatched tuning budget on Freeway.** PPO was swept over five learning rates
+  at 5M before its number was chosen; DQN's Freeway number comes from the paper's
+  hyperparameters and was never lr-swept (Phase 1 swept lr only on the three games
+  where DQN's curves trailed). PPO's 61.3 vs 59.3 margin there is small enough
+  that a DQN sweep could plausibly close it. Breakout gets its own sweep (above);
+  the Space Invaders and Asterix gaps are too large to be tuning artifacts.
+- **Published PPO-on-MinAtar numbers are not comparable to these.** The JAX
+  MinAtar ecosystem (gymnax, pgx) runs `use_minimal_action_set=True` — Breakout
+  has 3 actions, not 6 — with **no sticky actions** and a capped episode length.
+  That is a strictly easier MDP than the `-v0` envs used here. Their scores are
+  directional context only. The DQN-vs-PPO comparison above is unaffected: both
+  ran the identical environment.
+
+### CartPole: PPO vs the REINFORCE on-ramp
+
+![PPO vs REINFORCE on CartPole: eval return over 150k steps](assets/cartpole_ppo_vs_reinforce.png)
+
+Before PPO, a ~80-line REINFORCE agent (per-episode updates, reward-to-go,
+normalized returns, no critic) established the policy-gradient core in
+isolation. On CartPole at a matched 150k-step budget it is the *better* agent —
+de-biased 100-episode re-evals of the final checkpoints put REINFORCE at 500.0
+and PPO at 475.4 ± 48.5.
+
+That is the honest result, and the point: GAE, clipping, minibatch reuse and
+vectorized collection buy nothing on a task REINFORCE already solves in 55k
+steps. The case for the machinery starts where REINFORCE cannot go — MinAtar
+above, and the continuous track next.
 
 ## Setup
 
