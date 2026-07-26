@@ -45,8 +45,8 @@ python -m rl.train --config configs/<run>.yaml
 |------:|-------------|--------|
 | 0 | Repo + shared harness; random-policy pipeline check on CartPole; tabular Q-learning on FrozenLake | done — Q-learning hits 0.67 success on slippery FrozenLake (random: 0.02, optimal: ~0.74) |
 | 1 | DQN (replay buffer, target network, ε-greedy; Double/Dueling/n-step as toggles) | done — reproduces the MinAtar paper's DQN on all 5 games (see Results); solves CartPole/LunarLander at peak |
-| 2 | PPO (GAE, clipped objective, entropy bonus, vectorized rollouts) | discrete track done — beats DQN on 3 of 5 MinAtar games (see Results); continuous track next |
-| 3 | SAC (twin critics, reparameterized actor, auto-tuned entropy temperature) | planned |
+| 2 | PPO (GAE, clipped objective, entropy bonus, vectorized rollouts) | **done, both tracks** — beats DQN on 3 of 5 MinAtar games; reproduces the reference on MuJoCo locomotion (see Results) |
+| 3 | SAC (twin critics, reparameterized actor, auto-tuned entropy temperature) | next — benchmarks against the Phase 2 PPO runs on the same three MuJoCo envs |
 | 4 | Connect 4 self-play on-ramp: opponent pool, checkpoint Elo harness | planned |
 | 5 | Capstone: Pokémon Showdown Gen 1 via PPO + self-play | planned |
 
@@ -199,6 +199,119 @@ That is the honest result, and the point: GAE, clipping, minibatch reuse and
 vectorized collection buy nothing on a task REINFORCE already solves in 55k
 steps. The case for the machinery starts where REINFORCE cannot go — MinAtar
 above, and the continuous track next.
+
+## Results — Phase 2: PPO on MuJoCo (the continuous track)
+
+![PPO on three MuJoCo locomotion environments: training-return curves over 1M steps, three seeds each, against the CleanRL anchor](assets/mujoco_ppo_campaign.png)
+
+The same `PPOAgent` class, the same rollout buffer, the same GAE and clipped
+surrogate. A Box action space selects a diagonal Gaussian policy instead of a
+Categorical — chosen from the space itself, no config key — and that is the
+*entire* algorithmic difference between the tracks. PPO's objective is written
+over log-probabilities and never asks which distribution produced them.
+
+What genuinely changes is the environment stack. MuJoCo observations are
+unbounded and its returns grow with the policy, so observation and reward
+normalization stop being the no-ops they were on MinAtar's binary planes and
+0/1 rewards. They live in `rl/envs/normalize.py` as wrappers whose statistics
+are checkpointed with the policy and read frozen at eval — a restored policy
+scored against the wrong observation statistics doesn't crash, it just quietly
+scores badly.
+
+9 runs, 3 envs × 3 seeds × 1M steps, about 5 minutes wall-clock for the whole
+campaign. Config is CleanRL's `ppo_continuous_action` recipe taken whole (1 env
+× 2048 steps, 10 epochs × 32 minibatches, lr 3e-4 annealed, separate 64-64 tanh
+nets), which is also the PPO paper's own MuJoCo setting.
+
+**Two measures, kept apart on purpose.** The published anchor is a *stochastic
+training return*, so that is what the figure plots and what the first table
+compares. Our own headline metric — the de-biased 100-episode greedy re-eval —
+is a different measure and gets its own table. Mixing them is precisely the
+error that made the MinAtar comparison read wrong before its re-evals corrected
+it.
+
+| Env | Our training return | CleanRL anchor (v4) | Ratio |
+|---|---|---|---|
+| Hopper-v5 | 2380 ± 698 | 2383 | **1.00×** |
+| Walker2d-v5 | 3122 ± 284 | 2288 | 1.36× |
+| HalfCheetah-v5 | 2437 ± 1021 | 1443 | 1.69× |
+
+Mean ± std across 3 seeds, over the last 100k steps.
+
+**Hopper landing on its anchor to within 0.2% is the result that matters
+most** — it is the implementation-correctness check, an independent
+implementation reproduced from scratch. The other two exceed their anchors, and
+both have a candidate explanation that this campaign cannot settle:
+
+- **Walker2d is confounded by the environment version.** v5 changed the right
+  foot's friction from 0.9 to 1.9 (the feet were asymmetric by accident in v4)
+  on top of a healthy-reward fix. More grip plausibly means easier walking, and
+  no published PPO-on-v5 numbers exist to calibrate against.
+- **HalfCheetah is where our truncation handling should pay, and might be.**
+  HalfCheetah never terminates — `rollout/episode_length` is 1000 for every
+  episode of every run — so *every* episode boundary is a time-limit
+  truncation. Our GAE bootstraps through those, because each rollout row stores
+  its own `next_obs`; CleanRL treats truncation as termination (their issues
+  #457, #198), which biases the value target at every boundary. Pardo et al.
+  (2018) predict exactly this direction. Suggestive, not demonstrated: it can't
+  be separated from other differences without re-running their code, and
+  HalfCheetah's seed spread (1746 / 3881 / 1686) is far too wide for a 3-seed
+  claim.
+
+The de-biased greedy re-evals, which is what this repo reports as its own
+headline:
+
+| Env | Final checkpoint | Best checkpoint | Greedy premium |
+|---|---|---|---|
+| HalfCheetah-v5 | 2730 ± 1241 | 2732 ± 1259 | +12% |
+| Hopper-v5 | 2912 ± 748 | **3360 ± 166** | +22% |
+| Walker2d-v5 | **4122 ± 55** | 4122 ± 55 | +32% |
+
+100 episodes, deterministic mean action, episode seeds disjoint from the ones
+training-time eval selected on.
+
+Findings worth the compute:
+
+- **The deterministic-eval premium is large and env-dependent** — +12% on
+  HalfCheetah, +32% on Walker2d. A Gaussian policy's exploration noise costs
+  real return, and how much depends on how unforgiving the environment is about
+  a mistimed joint torque. This is why the anchor comparison above uses
+  training return on both sides.
+- **Three seeds cannot separate variants here.** HalfCheetah's ±1241 spans
+  nearly the whole gap to the anchor; the published spreads (CleanRL ±572 on
+  Walker2d, SB3-zoo ±822) say the same. The per-seed traces are drawn on the
+  figure rather than a smooth mean-and-band, because the spread *is* the
+  finding.
+- **Hopper is the one env with real churn.** Seed 0 finishes at 1869 having
+  peaked at 3209 — visible on the middle panel as the trace that collapses
+  after ~0.8M. Hopper policies fall over; falling is terminal and unrecoverable,
+  so a late bad update costs more here than on the other two. By contrast
+  Walker2d's best and final checkpoints are the same policy on all three seeds,
+  and HalfCheetah's differ by at most 26 points either way.
+- **Exploration rides on the learned scale, not an entropy bonus.**
+  `entropy_coef` is 0 on this track (the PPO paper uses no entropy bonus on
+  MuJoCo), so `loss/policy_std` is the health readout that replaces it: it
+  declines smoothly 0.99 → 0.16 over a run. An *early* collapse toward zero is
+  the failure signature — it never happened. Relatedly, a Gaussian's entropy
+  goes negative below σ ≈ 0.242; the logged −2.7 is arithmetic, not a bug.
+- **Truncation handling is not a detail on this track.** On MinAtar every
+  episode ended by termination and the distinction was academic. On HalfCheetah
+  it applies to 100% of episode boundaries, and getting it wrong biases every
+  single one.
+
+Caveats stated rather than buried:
+
+- **No published PPO-on-v5 numbers exist.** The anchors are v4. Transfer differs
+  per environment: HalfCheetah is clean (no dynamics or reward change),
+  Hopper near-clean (a healthy-reward fix worth about −1/episode), Walker2d
+  directional only (the friction change above).
+- **The 5800-class HalfCheetah scores in SB3-zoo and Tianshou are not this
+  recipe.** They come from per-environment tuning, different batch structures
+  and gSDE. Landing near CleanRL's 1443 on the shared recipe is on-anchor.
+- **Environment count, not just seed count, is the limit.** Three locomotion
+  environments is a thin basis for any claim about PPO in general; Phase 3
+  benchmarks SAC against these same runs, where the comparison is
+  within-repo and holds the environment stack fixed.
 
 ## Setup
 
