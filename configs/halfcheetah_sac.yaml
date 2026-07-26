@@ -59,6 +59,34 @@
 # ~995,000 gradient steps. 50k evals divide evenly into 1M. Measured ~425
 # steps/s single-threaded => ~39 min solo, ~79 min at 12-wide concurrency.
 # Seeds 0 / 100 / 200 for cross-repo consistency.
+#
+# PATHFINDER RESULT 2026-07-26 (seed 0, sha d7cb393, 37.7 min, 442 steps/s
+# post-warm-up): GREEN on every band, cleared to scale.
+#   eval climbs monotonically 4350 @50k -> 9064 @1M and is STILL RISING; the
+#     de-biased 100-episode re-eval is 9004 +/- 73 (final == best).
+#   anchor check, like for like: our deterministic 9004 against the
+#     deterministic anchors 9535 (SB3-zoo v3) / ~10.5-11.3k (paper v2) /
+#     ~11.5k (SpinningUp v3) = 78-94%; our stochastic 8582 against CleanRL's
+#     ~11,100 (live v4) / 9635 (stale docs v2) = 77-89%. IN BAND, at the low
+#     end. Recorded as on-anchor rather than chased: entropy converges to
+#     -6.005 against a target of exactly -6, which is the temperature loop
+#     provably working; alpha 0.998 -> 0.20; q_pred_mean 684 against the ~900
+#     the realized return scale implies; nothing has plateaued. The residual
+#     candidates are env version (no published v5 SAC number exists at 1M, and
+#     CleanRL's own v2->v4 shift on the same script is +15%) and mujoco 3.10.0
+#     -- neither separable without running their code, same standing as chunk
+#     5's HalfCheetah truncation hypothesis.
+#   vs our own PPO: 3.30x on deterministic re-evals, 3.52x on training return.
+#     Pre-registration said ~4x; we land under it because our SAC is at the
+#     bottom of its band while our PPO ran 1.69x ABOVE its own anchor.
+#   our log-prob divergence is ELIMINATED as an explanation: mu_absmax peaked
+#     at 4.48, and at |u| <= 4.5 the stable and epsilon-floored forms differ by
+#     1.4e-3 nats (they only part company past ~7.6).
+#   greedy premium is only +4.9% here (9004 vs 8582) where PPO's was +12% --
+#     first real datum on a quantity the literature does not publish.
+#   episode_length is 1000 for every episode, so `terminated` never fires on
+#     this env, exactly as the degeneracy audit predicted. Hopper is where that
+#     path gets exercised.
 env_id: HalfCheetah-v5
 seed: 0
 total_steps: 1000000
