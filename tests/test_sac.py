@@ -70,6 +70,24 @@ def _constant(net, value):
         [m for m in net.modules() if isinstance(m, nn.Linear)][-1].bias.fill_(value)
 
 
+def _obs_linear(net, weight, bias):
+    """Make a critic compute `weight * obs[0] + bias`, ignoring the action.
+
+    Needs hidden_sizes=[1], and obs[0] positive so the ReLU passes it through.
+    A critic that varies across the batch is what makes a (B, B) broadcast
+    detectable: with CONSTANT target critics every row of the broadcast matrix
+    is identical, so its mean equals the correct one and the bug hides.
+    """
+    layers = [m for m in net.modules() if isinstance(m, nn.Linear)]
+    assert len(layers) == 2, "_obs_linear needs hidden_sizes=[1]"
+    with torch.no_grad():
+        layers[0].weight.zero_()
+        layers[0].weight[0, 0] = 1.0
+        layers[0].bias.zero_()
+        layers[1].weight.fill_(weight)
+        layers[1].bias.fill_(bias)
+
+
 def _pin_actor(agent, mean_raw=0.0, log_std_raw=0.0):
     """Pin the actor's raw head outputs (log_std_raw is PRE tanh-rescale)."""
     with torch.no_grad():
@@ -211,15 +229,16 @@ def test_td_target_uses_the_twin_min_the_discount_and_terminated_only():
     truncated rows must still bootstrap, which is why a third of the rows
     carry truncated=True with terminated=False.
 
-    The online critics are left random so their predictions VARY across the
-    batch — with constant predictions, a target that broadcast to (B, B) would
-    produce the identical loss and this test would not see it.
+    The target critics are made to VARY across the batch (10*x+5 and x+3 over
+    x = next_obs[0]), which matters for more than realism: with constant target
+    critics every row of a (B, B) broadcast is identical, its mean equals the
+    correct one, and the shape bug this test is partly here for slips through.
     """
     batch = 6
     agent = _agent(batch_size=batch, learning_starts=batch, buffer_capacity=batch,
-                   gamma=0.9, autotune=False, alpha=1e-12)
-    _constant(agent.q1_target, 5.0)
-    _constant(agent.q2_target, 3.0)  # min is 3.0
+                   gamma=0.9, autotune=False, alpha=1e-12, hidden_sizes=(1,))
+    _obs_linear(agent.q1_target, 10.0, 5.0)  # 10x + 5, in [6.0, 11.0] here
+    _obs_linear(agent.q2_target, 1.0, 3.0)   #  x + 3, in [3.1, 3.6] -> always the min
     q1_before, q2_before = copy.deepcopy(agent.q1), copy.deepcopy(agent.q2)
 
     rows = [_row(t, reward=float(t), terminated=(t % 3 == 0), truncated=(t % 3 == 1))
@@ -231,9 +250,14 @@ def test_td_target_uses_the_twin_min_the_discount_and_terminated_only():
     np.random.seed(0)
     idx = np.random.randint(0, batch, size=batch)  # the draw sample() just made
 
-    rewards = np.arange(batch, dtype=np.float32)[idx]
-    terminated = np.array([float(t % 3 == 0) for t in range(batch)], dtype=np.float32)[idx]
-    target = torch.as_tensor(rewards + 0.9 * (1.0 - terminated) * 3.0)
+    # Inputs come from the buffer (its storage is test_replay.py's job); only
+    # the soft-Bellman FORMULA is hand-computed here.
+    min_next_q = agent.buffer.next_obs[idx][:, 0] + 3.0
+    target = torch.as_tensor(
+        agent.buffer.rewards[idx]
+        + 0.9 * (1.0 - agent.buffer.terminated[idx]) * min_next_q
+    )
+    assert float(target.std()) > 0.1  # rows must differ, or a (B, B) target hides
     state_action = torch.as_tensor(
         np.concatenate([agent.buffer.obs[idx], agent.buffer.actions[idx]], axis=-1)
     )
@@ -243,6 +267,25 @@ def test_td_target_uses_the_twin_min_the_discount_and_terminated_only():
             + F.mse_loss(q2_before(state_action).squeeze(-1), target)
         )
     assert metrics["loss/critic"] == pytest.approx(expected, rel=1e-4)
+
+
+def test_the_entropy_bonus_actually_enters_the_td_target():
+    """The soft part of the soft Bellman backup. Two agents identical in every
+    way except alpha, driven through the same transitions with the same RNG:
+    if `- alpha * log pi` were missing from the target, their critic losses
+    would be bitwise equal. (The hand-computed test above runs at alpha 1e-12
+    precisely so the entropy term is negligible there — which means it cannot
+    police this, and did not.)"""
+    def critic_loss_at(alpha):
+        agent = _agent(batch_size=6, learning_starts=6, buffer_capacity=6,
+                       autotune=False, alpha=alpha, seed=0)
+        for t in range(5):
+            agent.update(_row(t, reward=float(t)))
+        np.random.seed(0)
+        torch.manual_seed(0)
+        return agent.update(_row(5, reward=5.0))["loss/critic"]
+
+    assert critic_loss_at(1e-12) != pytest.approx(critic_loss_at(0.5), rel=1e-6)
 
 
 def test_an_unsqueezed_critic_output_turns_the_target_into_a_matrix_silently():
@@ -412,9 +455,12 @@ def test_deterministic_act_is_the_squashed_mean_in_shape_dtype_and_bounds():
     action = agent.act(obs, deterministic=True)
     assert action.shape == (ACT_DIM,) and action.dtype == np.float32
     assert np.all(action >= -1.0) and np.all(action <= 3.0)
+    # Rebuilt from the raw head output, NOT by calling deterministic_action:
+    # comparing act() against the method it delegates to is circular, and
+    # passes happily with the scale or bias dropped from both sides.
     with torch.no_grad():
-        expected = agent.actor.deterministic_action(torch.as_tensor(obs).unsqueeze(0))
-    np.testing.assert_allclose(action, expected.numpy()[0], rtol=1e-6)
+        mean, _ = agent.actor(torch.as_tensor(obs).unsqueeze(0))
+    np.testing.assert_allclose(action, np.tanh(mean.numpy()[0]) * 2.0 + 1.0, rtol=1e-6)
 
 
 def test_sampled_actions_vary_and_stay_inside_the_bounds():
