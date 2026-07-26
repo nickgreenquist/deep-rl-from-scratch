@@ -107,11 +107,28 @@ Mean ± std across 3 seeds. **PPO wins decisively on two games, modestly on one,
 ties one, and loses one** — a mixed result, which is what the literature would
 predict; neither family dominates across environments.
 
-<!-- TODO (in flight): fold in the DQN Breakout lr probe — configs/minatar_breakout_dqn_{lr5e4,lr1e3}.yaml,
-     3 seeds each, seeds 0/1/2 paired against the vanilla runs. If DQN does not improve at higher lr,
-     the Breakout tie stands with both algorithms swept and the "tuning budget" caveat below can be
-     narrowed to Freeway only. If it does improve, the Breakout row flips to DQN and the summary line
-     above becomes "decisively ahead on two, modestly on one, behind on two". -->
+**The Breakout tie survives a matched tuning budget.** PPO's number came from a
+five-point lr sweep, so DQN got the same treatment there — 3 seeds each at
+lr 5e-4 and 1e-3 against its 2.5e-4 default. DQN does not improve; it degrades:
+
+| DQN on Breakout | final re-eval |
+|---|---|
+| lr 2.5e-4 (default) | 23.28 ± 0.55 |
+| lr 5e-4 | 21.06 ± 2.52 |
+| lr 1e-3 | 15.09 ± 2.60 |
+| lr 2.5e-4 + n-step 3 | **25.11 ± 2.96** |
+
+So both algorithms are now swept on Breakout and both land at ~25 (PPO 25.91 ±
+2.63 vs DQN 25.11 ± 2.96, intervals overlapping heavily) — a genuine tie rather
+than an artifact of who got tuned.
+
+**The asymmetry is the interesting part.** lr 1e-3 is what took PPO from 5.5 to
+25.9; the same value costs DQN a third of its score. The mechanism is gradient
+work per sample: DQN takes ~1024 gradient steps per 1024 transitions where PPO
+takes 16, so at any shared nominal lr DQN is already near its stability ceiling
+while PPO is starved. Identical numbers on a config line, ~64× different
+effective learning rates — which is exactly why "we gave both algorithms the same
+learning rate" would have been a *bad* fairness argument.
 Greedy rollouts from the best PPO Breakout checkpoint (`scripts/record.py`):
 
 ![Trained PPO playing MinAtar Breakout: three greedy episodes with a step/return HUD](assets/minatar_breakout_ppo_rollout.gif)
@@ -157,9 +174,10 @@ Two caveats stated rather than buried:
 - **Unmatched tuning budget on Freeway.** PPO was swept over five learning rates
   at 5M before its number was chosen; DQN's Freeway number comes from the paper's
   hyperparameters and was never lr-swept (Phase 1 swept lr only on the three games
-  where DQN's curves trailed). PPO's 61.3 vs 59.3 margin there is small enough
-  that a DQN sweep could plausibly close it. Breakout gets its own sweep (above);
-  the Space Invaders and Asterix gaps are too large to be tuning artifacts.
+  where DQN's curves trailed, and Breakout got its own sweep above). PPO's 61.3 vs
+  59.3 margin there is small enough that a DQN sweep could plausibly close it —
+  though on the two games where DQN *has* been swept, higher learning rates only
+  hurt it. Space Invaders and Asterix are too large a gap to be tuning artifacts.
 - **Published PPO-on-MinAtar numbers are not comparable to these.** The JAX
   MinAtar ecosystem (gymnax, pgx) runs `use_minimal_action_set=True` — Breakout
   has 3 actions, not 6 — with **no sticky actions** and a capped episode length.
