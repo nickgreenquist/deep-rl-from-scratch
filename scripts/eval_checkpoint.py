@@ -26,7 +26,7 @@ import torch
 from rl.common.checkpoint import load_checkpoint
 from rl.common.config import Config
 from rl.common.evaluation import eval_returns
-from rl.envs.make import make_env
+from rl.envs.make import make_eval_env
 from rl.envs.normalize import frozen_obs_env
 from rl.train import make_agent
 
@@ -43,7 +43,7 @@ def main() -> None:
     torch.set_num_threads(cfg.torch_threads)
     # Frozen normalizer before make_agent: the agent builds against the env's
     # observation space, and the policy must see the same scale it trained on.
-    env = frozen_obs_env(make_env(cfg.env_id, cfg.seed), cfg, ckpt)
+    env = frozen_obs_env(make_eval_env(cfg), cfg, ckpt)
     agent = make_agent(cfg, env)
     agent.load_state_dict(ckpt["agent"])
 

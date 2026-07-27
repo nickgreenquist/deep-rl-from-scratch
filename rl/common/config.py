@@ -35,6 +35,22 @@ class Config:
     # is what lets multi-seed benchmarks parallelize. Raise it when the nets
     # and batches are big enough to amortize fork/join (capstone scale).
     torch_threads: int = 1
+    # Self-play (Phase 4). `field(default_factory=dict)` and NOT `= {}`: a
+    # mutable default is a ValueError at class-creation time, which would
+    # take down every import in the repo, not just this file.
+    # Keys: opponent (training), eval_opponent (the fixed external anchor),
+    # and from chunk 2 the pool settings. Empty for every pre-Phase-4 config,
+    # which is what makes all of this a no-op on existing runs.
+    selfplay: dict = field(default_factory=dict)
+    # Emit eval/win_rate, computed from the env's info["outcome"]. Off by
+    # default so no existing config or run changes shape.
+    eval_win_rate: bool = False
+    # Env steps between rungs of the checkpoint ladder the Phase 4 tournament
+    # plays against; 0 disables it. Written by THRESHOLD CROSSING, never
+    # `step % checkpoint_every` — the vector loop advances `step` by num_envs
+    # at a time, so the modulo silently yields a third of the rungs at
+    # num_envs 6 or 12.
+    checkpoint_every: int = 0
     logger: str = "wandb"  # "wandb" | "tensorboard"
     agent: dict = field(default_factory=dict)
 

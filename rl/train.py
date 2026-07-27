@@ -28,7 +28,7 @@ from rl.common.config import Config, load_config, run_dir
 from rl.common.evaluation import evaluate
 from rl.common.logging import Logger, make_logger
 from rl.common.seeding import set_seed
-from rl.envs.make import make_env, make_vec_env
+from rl.envs.make import make_env, make_eval_env, make_vec_env, selfplay_env_kwargs
 from rl.envs.normalize import (
     FrozenNormalizeObservation,
     NormalizeObservation,
@@ -130,11 +130,30 @@ def train(cfg: Config) -> None:
             f"normalize_obs/normalize_reward need a vectorized algorithm; "
             f"{cfg.agent.get('algo')!r} runs the scalar loop"
         )
+    if cfg.selfplay and (cfg.normalize_obs or cfg.normalize_reward):
+        # The normalizers are VECTOR-level wrappers, and the opponent lives
+        # inside a sub-env beneath them. The learner would act on z-scored
+        # observations while every frozen snapshot still acts on raw bools,
+        # so the pool would be un-frozen by the back door — with no crash and
+        # no metric that looks wrong.
+        raise ValueError(
+            "selfplay is incompatible with normalize_obs/normalize_reward: the "
+            "normalizers wrap the vector env, but the opponent lives inside a "
+            "sub-env and would keep seeing raw observations"
+        )
+    # Self-play configs pass their opponent into the env; every other config
+    # gets {} and is bit-for-bit unaffected. In chunk 2 the training value
+    # becomes the live snapshot pool object rather than a name — same seam,
+    # because a pool IS an Opponent under the protocol.
+    train_env_kwargs = selfplay_env_kwargs(cfg, "opponent")
     if vectorized:
-        env = make_vec_env(cfg.env_id, cfg.seed, cfg.num_envs)
+        env = make_vec_env(cfg.env_id, cfg.seed, cfg.num_envs, env_kwargs=train_env_kwargs)
     else:
-        env = make_env(cfg.env_id, cfg.seed)
-    eval_env = make_env(cfg.env_id, cfg.seed)  # eval reseeds per episode
+        env = make_env(cfg.env_id, cfg.seed, env_kwargs=train_env_kwargs)
+    # Eval reseeds per episode, and goes through make_eval_env so a self-play
+    # run is scored against its fixed anchor rather than the env's default
+    # opponent — this is the call site that selects best_checkpoint.
+    eval_env = make_eval_env(cfg)
     # Normalization statistics are shared, not copied: the eval env reads the
     # training env's live RunningMeanStd but never updates it, so each eval
     # pass scores the policy under the statistics it is currently training
@@ -179,6 +198,7 @@ def _scalar_loop(
     ep_losses: dict[str, float] = defaultdict(float)
     ep_counts: dict[str, int] = defaultdict(int)
     last_step, last_time = 0, time.perf_counter()
+    next_ckpt = cfg.checkpoint_every
 
     for step in range(1, cfg.total_steps + 1):
         action = agent.act(obs, mask)
@@ -219,8 +239,13 @@ def _scalar_loop(
             ep_losses.clear()
             ep_counts.clear()
 
+        if cfg.checkpoint_every and step >= next_ckpt:
+            save_checkpoint(out_dir / f"ckpt_{step:09d}.pt", agent, step, cfg)
+            while next_ckpt <= step:
+                next_ckpt += cfg.checkpoint_every
+
         if step % cfg.eval_every == 0:
-            metrics = evaluate(agent, eval_env, cfg.eval_episodes)
+            metrics = evaluate(agent, eval_env, cfg.eval_episodes, win_rate=cfg.eval_win_rate)
             logger.log(metrics, step)
             # The final policy is an arbitrary sample of an oscillating
             # training trajectory (deep RL policies churn), so keep the
@@ -261,6 +286,12 @@ def _vector_loop(
     ep_lengths = np.zeros(num_envs, dtype=np.int64)
     step, next_eval = 0, cfg.eval_every
     last_step, last_time = 0, time.perf_counter()
+    # Checkpoint ladder by threshold crossing. `step` advances by num_envs, so
+    # it lands ON a multiple of checkpoint_every only when the two divide;
+    # `step % checkpoint_every == 0` would silently write 3 rungs where 9 were
+    # asked for. The while-loop advance also survives a stride that skips a
+    # whole threshold.
+    next_ckpt = cfg.checkpoint_every
 
     # Step advances num_envs at a time, so the run ends at the first multiple
     # of num_envs >= total_steps, and evals fire on crossing each threshold
@@ -315,9 +346,14 @@ def _vector_loop(
             if masks is not None:
                 masks = np.where(done[:, None], reset_infos["action_mask"], masks)
 
+        if cfg.checkpoint_every and step >= next_ckpt:
+            save_checkpoint(out_dir / f"ckpt_{step:09d}.pt", agent, step, cfg, normalizers)
+            while next_ckpt <= step:
+                next_ckpt += cfg.checkpoint_every
+
         if step >= next_eval:
             next_eval += cfg.eval_every
-            metrics = evaluate(agent, eval_env, cfg.eval_episodes)
+            metrics = evaluate(agent, eval_env, cfg.eval_episodes, win_rate=cfg.eval_win_rate)
             logger.log(metrics, step)
             if metrics["eval/return_mean"] > best_eval:
                 best_eval = metrics["eval/return_mean"]

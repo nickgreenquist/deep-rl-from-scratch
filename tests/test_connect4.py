@@ -8,9 +8,20 @@ swapped learner planes and a dropped epoch mask scored *higher* than clean.
 
 Fixtures are hand-pinned semantics; `tests/test_connect4_oracle.py` fuzzes
 against open_spiel for the discrepancies nobody thought to name. The two are
-complementary and neither replaces the other: the mask is all-True at 63.8%
-of decision points and single-legal-column positions are 0.53%, so fuzz alone
-is flaky on exactly the cases that matter.
+complementary and neither replaces the other, because the interesting mask
+states are rare.
+
+Measured here over 42,725 real learner decision points under random play:
+the mask is all-True at **83.8%** of them and single-legal-column positions
+are **0.05%** (~1 in 2000). PLAN.md's locked figures are 63.8% and 0.53%,
+measured during the spec review; the gap is most likely the distribution
+rather than an error on either side — those came from trained self-play,
+where stronger blocking lengthens games and ~16% end in 42-ply draws, so
+far more columns fill than in random play's ~21-ply games. Recorded rather
+than reconciled, because it changes no decision: under EITHER distribution
+single-legal columns are rare enough that fuzz alone is flaky on them, and
+random play is the weaker case, so pinning the fixture by hand is if
+anything more necessary than the locked numbers implied.
 """
 
 import gymnasium as gym
@@ -654,3 +665,102 @@ def test_select_is_called_once_per_episode():
         while not done:
             obs, _, done, _, info = env.step(int(np.flatnonzero(info["action_mask"])[0]))
     assert opponent.selects == 5
+
+
+# ------------------------------------------------- the masking contract, for real
+
+def test_ppo_masking_is_consistent_on_real_connect4_rollouts():
+    """The silent-corruption case the masking contract was written for.
+
+    With lr=0 the policy cannot move, so pi_new == pi_old and approx_kl is
+    exactly 0.0 — UNLESS the epoch forward masks differently from the
+    update-start recompute, in which case every importance ratio on a row
+    carrying an illegal column is silently wrong. Connect 4 is the repo's
+    first env that supplies genuinely varying masks in training, so this is
+    the first time the check has any power at all: on the spine envs every
+    mask is all-True and the same defect is undetectable by construction
+    (asserted below, so the difference is recorded rather than assumed).
+    """
+    import torch
+    from torch.distributions import Categorical
+
+    from rl.agents.ppo import PPOAgent
+    from rl.common.masking import masked_logits
+    from rl.envs.make import make_vec_env
+
+    torch.manual_seed(0)
+    envs = make_vec_env("Connect4-v0", 0, 4, env_kwargs={"opponent": "heuristic"})
+    agent = PPOAgent(
+        envs.single_observation_space, envs.single_action_space, num_envs=4,
+        device="cpu", lr=0.0, gamma=1.0, gae_lambda=0.95, rollout_steps=32,
+        epochs=2, minibatches=2, clip_eps=0.2, entropy_coef=0.01,
+        value_coef=0.5, max_grad_norm=0.5, hidden_sizes=[16],
+    )
+    obs, infos = envs.reset(seed=0)
+    masks = infos["action_mask"]
+    seen_obs, seen_actions, seen_masks, metrics = [], [], [], {}
+    for _ in range(32):
+        actions = agent.act(obs, masks)
+        seen_obs.append(obs.copy())
+        seen_actions.append(actions.copy())
+        seen_masks.append(masks.copy())
+        next_obs, rewards, terminated, truncated, infos = envs.step(actions)
+        next_masks = infos["action_mask"]
+        metrics = agent.update(
+            (obs, actions, rewards, next_obs, terminated, truncated, masks, next_masks)
+        ) or metrics
+        obs, masks = next_obs, next_masks
+        done = terminated | truncated
+        if done.any():
+            obs, reset_infos = envs.reset(options={"reset_mask": done})
+            masks = np.where(done[:, None], reset_infos["action_mask"], masks)
+
+    assert metrics, "the rollout should have filled"
+    assert abs(metrics["loss/approx_kl"]) < 1e-7, (
+        f"masked-inconsistency drift: approx_kl={metrics['loss/approx_kl']}"
+    )
+
+    # Power. A test that cannot fail is not a test: measure how many rows
+    # actually carry an illegal column, and how far the importance ratio
+    # would move if the epoch forward dropped the mask.
+    flat_masks = np.concatenate(seen_masks)
+    illegal_rows = float(np.mean(~flat_masks.all(axis=-1)))
+    assert illegal_rows > 0.02, f"only {illegal_rows:.1%} of rows carry an illegal column"
+
+    obs_t = torch.as_tensor(np.concatenate(seen_obs), dtype=torch.float32)
+    act_t = torch.as_tensor(np.concatenate(seen_actions))
+    mask_t = torch.as_tensor(flat_masks)
+    with torch.no_grad():
+        logits = agent.actor(obs_t)
+        masked_logp = Categorical(logits=masked_logits(logits, mask_t)).log_prob(act_t)
+        unmasked_logp = Categorical(logits=logits).log_prob(act_t)
+    max_ratio_error = float((masked_logp - unmasked_logp).exp().max())
+    assert max_ratio_error > 1.2, (
+        f"dropping the mask moves the ratio by at most {max_ratio_error:.3f}x — "
+        "this probe would not detect it"
+    )
+    envs.close()
+
+
+def test_the_same_mask_defect_is_invisible_on_an_all_true_env():
+    """The control for the probe above, kept standing. On every Phase 0-3 env
+    the mask is all-True, so masked and unmasked log-probs are bitwise equal
+    and no rollout can distinguish a correct implementation from one that
+    ignores the mask entirely. That is why the masking retrofit was provably
+    a no-op there — and why it needed Connect 4 to be tested at all."""
+    from rl.envs.make import make_vec_env
+
+    envs = make_vec_env("CartPole-v1", 0, 4)
+    obs, infos = envs.reset(seed=0)
+    rows = []
+    for _ in range(32):
+        actions = np.array([envs.single_action_space.sample() for _ in range(4)])
+        rows.append(infos["action_mask"].copy())
+        obs, _, terminated, truncated, infos = envs.step(actions)
+        done = terminated | truncated
+        if done.any():
+            obs, reset_infos = envs.reset(options={"reset_mask": done})
+    stacked = np.concatenate(rows)
+    assert stacked.all(), "a spine env supplied a non-trivial mask"
+    assert float(np.mean(~stacked.all(axis=-1))) == 0.0
+    envs.close()

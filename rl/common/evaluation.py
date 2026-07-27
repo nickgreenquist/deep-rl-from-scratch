@@ -17,6 +17,35 @@ from rl.agents.base import Agent
 EVAL_SEED_OFFSET = 10_000
 
 
+def _run_eval_episodes(
+    agent: Agent, env: gym.Env, episodes: int, seed_start: int = 0, max_steps: int = 10_000
+) -> tuple[list[float], list[int | None]]:
+    """The protocol itself, returning per-episode (returns, outcomes).
+
+    `outcomes` is the env's own `info["outcome"]` at the terminal step, or
+    None where the env supplies none (every env before Phase 4) or where the
+    episode hit `max_steps`. Private so that `eval_returns` keeps its exact
+    public signature and return type for the analysis scripts.
+    """
+    returns: list[float] = []
+    outcomes: list[int | None] = []
+    for episode in range(episodes):
+        obs, info = env.reset(seed=EVAL_SEED_OFFSET + seed_start + episode)
+        mask = info.get("action_mask")  # masking applies at eval time too
+        ep_return, done, steps = 0.0, False, 0
+        while not done and steps < max_steps:
+            obs, reward, terminated, truncated, info = env.step(
+                agent.act(obs, mask, deterministic=True)
+            )
+            mask = info.get("action_mask")
+            ep_return += float(reward)
+            steps += 1
+            done = terminated or truncated
+        returns.append(ep_return)
+        outcomes.append(info.get("outcome") if done else None)
+    return returns, outcomes
+
+
 def eval_returns(
     agent: Agent, env: gym.Env, episodes: int, seed_start: int = 0, max_steps: int = 10_000
 ) -> list[float]:
@@ -35,26 +64,40 @@ def eval_returns(
     lr-5e-4 diagnostic runs. The cap is ~50x a normal MinAtar episode, so
     it binds only on effectively-immortal policies; the return
     accumulated at the cap is recorded."""
-    returns = []
-    for episode in range(episodes):
-        obs, info = env.reset(seed=EVAL_SEED_OFFSET + seed_start + episode)
-        mask = info.get("action_mask")  # masking applies at eval time too
-        ep_return, done, steps = 0.0, False, 0
-        while not done and steps < max_steps:
-            obs, reward, terminated, truncated, info = env.step(
-                agent.act(obs, mask, deterministic=True)
-            )
-            mask = info.get("action_mask")
-            ep_return += float(reward)
-            steps += 1
-            done = terminated or truncated
-        returns.append(ep_return)
-    return returns
+    return _run_eval_episodes(agent, env, episodes, seed_start, max_steps)[0]
 
 
-def evaluate(agent: Agent, env: gym.Env, episodes: int) -> dict[str, float]:
-    returns = eval_returns(agent, env, episodes)
-    return {
+def evaluate(
+    agent: Agent, env: gym.Env, episodes: int, win_rate: bool = False
+) -> dict[str, float]:
+    """Mean/std of the eval return, plus `eval/win_rate` when asked for.
+
+    The win rate is the fraction of episodes with `info["outcome"] == 1`,
+    read from the ENV. It is deliberately not `return > 0`, which is the
+    obvious implementation and is unsafe: the return is computed from the
+    very reward a sign bug inverts, so a flipped reward makes that form
+    report a win rate of 1.000 and sail through its own detector at the
+    ceiling — measured on real training runs, where the "near 0%" signature
+    the spec had predicted instead showed up on a policy genuinely winning
+    81.3% of its games. Reading an env-supplied outcome breaks that
+    circularity: no arithmetic on the reward stream can forge it.
+
+    Draws count as neither wins nor losses, so win_rate + loss_rate need not
+    sum to 1.
+    """
+    returns, outcomes = _run_eval_episodes(agent, env, episodes)
+    metrics = {
         "eval/return_mean": float(np.mean(returns)),
         "eval/return_std": float(np.std(returns)),
     }
+    if win_rate:
+        missing = sum(outcome is None for outcome in outcomes)
+        if missing:
+            # Silently scoring these as non-wins would report a plausible,
+            # wrong number — the failure mode this metric exists to avoid.
+            raise ValueError(
+                f"eval_win_rate is on but {missing}/{len(outcomes)} eval episodes "
+                f'supplied no info["outcome"]'
+            )
+        metrics["eval/win_rate"] = float(np.mean([outcome == 1 for outcome in outcomes]))
+    return metrics

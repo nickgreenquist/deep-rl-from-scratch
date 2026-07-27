@@ -11,7 +11,7 @@ import time
 
 from rl.common.checkpoint import load_checkpoint
 from rl.common.config import Config
-from rl.envs.make import make_env
+from rl.envs.make import make_eval_env
 from rl.envs.normalize import frozen_obs_env
 from rl.train import make_agent
 
@@ -30,7 +30,7 @@ def main() -> None:
 
     ckpt = load_checkpoint(args.checkpoint)
     cfg = Config(**ckpt["config"])
-    env = make_env(cfg.env_id, cfg.seed, render_mode="human")
+    env = make_eval_env(cfg, render_mode="human")
     if args.fps:
         # The human renderer paces its clock off this metadata entry.
         env.unwrapped.metadata["render_fps"] = args.fps
