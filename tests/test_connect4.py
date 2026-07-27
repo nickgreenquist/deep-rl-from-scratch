@@ -13,10 +13,18 @@ of decision points and single-legal-column positions are 0.53%, so fuzz alone
 is flaky on exactly the cases that matter.
 """
 
+import gymnasium as gym
 import numpy as np
 import pytest
 
-from rl.envs.connect4 import COLS, ROWS, Connect4Board
+from rl.envs.connect4 import COLS, ROWS, Connect4Board, Connect4Env
+from rl.selfplay.opponents import (
+    HeuristicOpponent,
+    Opponent,
+    RandomOpponent,
+    board_from_obs,
+    make_opponent,
+)
 
 # Win fixtures: column sequences, alternating players, the LAST move winning.
 # Each is cross-checked against open_spiel in the oracle test file.
@@ -198,3 +206,451 @@ def test_copy_is_independent():
     clone.drop(3)
     assert board.moves == 1 and clone.moves == 2
     assert not np.shares_memory(board.board, clone.board)
+
+
+# ---------------------------------------------------------------- env probes
+
+class ScriptedOpponent(Opponent):
+    """Plays a fixed column sequence. Lets a test drive both seats of a
+    known game through the env, which is the only way to reach positions
+    (a draw, a win on the 42nd disc) that random play effectively never
+    produces."""
+
+    def __init__(self, cols):
+        self.cols = list(cols)
+        self.i = 0
+
+    def select(self, rng):
+        # select() is the per-episode hook, so the script rewinds here. Without
+        # this, reset_seat's retries silently consume scripted moves and the
+        # test plays a different game than it reads as playing.
+        self.i = 0
+        return self
+
+    def move(self, obs, mask, rng):
+        col = self.cols[self.i]
+        self.i += 1
+        return col
+
+
+class RecordingOpponent(Opponent):
+    """Captures every observation it is handed, then plays the first legal
+    column. This is the ONLY way to probe the opponent's perspective: under
+    self-play both sides are the same network, so a wrong perspective here
+    is symmetric and the training loop cannot see it."""
+
+    def __init__(self):
+        self.seen = []
+
+    def move(self, obs, mask, rng):
+        self.seen.append(obs.copy())
+        return int(np.flatnonzero(mask)[0])
+
+
+class OutOfRangeOpponent(Opponent):
+    def move(self, obs, mask, rng):
+        return COLS  # never a valid column index
+
+
+class AlwaysColumnZeroOpponent(Opponent):
+    """Keeps playing column 0 even after it fills — so the opponent's mask
+    check, not just its range check, gets exercised."""
+
+    def move(self, obs, mask, rng):
+        return 0
+
+
+def reset_seat(env, learner_first, max_seed=50):
+    """Reset until the learner has the requested seat, detected from the
+    observation alone (an empty board means the learner moves first). The
+    first-player flip is random by design, so tests that need a specific seat
+    must find one rather than assume one."""
+    for seed in range(max_seed):
+        obs, info = env.reset(seed=seed)
+        if bool(obs.sum() == 0) == learner_first:
+            return obs, info, seed
+    raise AssertionError("could not find the requested seat")
+
+
+def test_env_spaces_and_mask_contract():
+    env = Connect4Env()
+    assert env.observation_space.shape == (2, ROWS, COLS)
+    assert env.observation_space.dtype == np.bool_
+    assert env.action_space.n == COLS
+    obs, info = env.reset(seed=0)
+    assert env.observation_space.contains(obs)
+    mask = info["action_mask"]
+    assert mask.shape == (COLS,) and mask.dtype == np.bool_ and mask.all()
+
+
+def test_learner_sees_its_own_discs_in_plane_zero():
+    """Perspective site 1. The learner's own disc must land in plane 0."""
+    env = Connect4Env(opponent="random")
+    reset_seat(env, learner_first=True)
+    obs, _, _, _, _ = env.step(3)
+    assert obs[0].sum() == 1 and obs[0][0, 3], "learner's disc is not in plane 0"
+    assert obs[1].sum() == 1, "opponent should have replied exactly once"
+
+
+def test_opponent_sees_its_own_discs_in_plane_zero():
+    """Perspective site 2 — the dangerous one. When the opponent is queried
+    after the learner's first move, it must see an EMPTY plane 0 (it has no
+    discs yet) and the learner's single disc in plane 1."""
+    recorder = RecordingOpponent()
+    env = Connect4Env(opponent=recorder)
+    reset_seat(env, learner_first=True)
+    env.step(3)
+    assert len(recorder.seen) == 1
+    seen = recorder.seen[0]
+    assert seen[0].sum() == 0, "opponent sees the learner's disc as its own"
+    assert seen[1].sum() == 1 and seen[1][0, 3]
+    # And the round-trip: the board the opponent reconstructs has itself as
+    # the player to move (+1), which is what HeuristicOpponent relies on.
+    assert board_from_obs(seen)[0, 3] == -1
+
+
+def test_reward_sign_follows_who_won():
+    """Perspective site 3. A sign inversion here is the defect that makes a
+    `return > 0` win rate read 1.000, which is why eval/win_rate comes from
+    info["outcome"] instead."""
+    # Learner wins: it plays column 0 four times, the scripted opponent
+    # answers in column 1 and never interferes.
+    env = Connect4Env(opponent=ScriptedOpponent([1, 1, 1, 1]))
+    reset_seat(env, learner_first=True)
+    for _ in range(3):
+        obs, reward, terminated, _, info = env.step(0)
+        assert reward == 0.0 and not terminated
+    obs, reward, terminated, _, info = env.step(0)
+    assert terminated and reward == 1.0 and info["outcome"] == 1
+
+    # Opponent wins: it stacks column 1 while the learner plays elsewhere.
+    # Columns 2,3,4,6 on purpose — 2,3,4,5 would be a horizontal four and the
+    # LEARNER would win the test written for the opponent.
+    env = Connect4Env(opponent=ScriptedOpponent([1, 1, 1, 1]))
+    reset_seat(env, learner_first=True)
+    for col in (2, 3, 4):
+        obs, reward, terminated, _, info = env.step(col)
+        assert reward == 0.0 and not terminated
+    obs, reward, terminated, _, info = env.step(6)
+    assert terminated and reward == -1.0 and info["outcome"] == -1
+
+
+def test_terminal_next_obs_perspective_flips_with_who_ended_it():
+    """Perspective site 4 — RECORDED, not fixed. After the learner's winning
+    move the board has already negated, so the final observation is from the
+    opponent's side; after the opponent's winning move it is from the
+    learner's. Inert under PPO (compute_gae multiplies the bootstrap by
+    1 - terminated, and this env never truncates), but it contradicts
+    rollout.py's per-row invariant, so it is pinned here: any future consumer
+    of terminal next_obs must come and read this test."""
+    env = Connect4Env(opponent=ScriptedOpponent([1, 1, 1, 1]))
+    reset_seat(env, learner_first=True)
+    for _ in range(3):
+        env.step(0)
+    obs, _, terminated, _, _ = env.step(0)  # learner wins
+    assert terminated
+    # The winner's four discs sit in plane 1: the observation is the LOSER's.
+    assert [bool(obs[1][r, 0]) for r in range(4)] == [True] * 4
+    assert obs[0].sum() == 3, "plane 0 should hold the opponent's three discs"
+
+    env = Connect4Env(opponent=ScriptedOpponent([1, 1, 1, 1]))
+    reset_seat(env, learner_first=True)
+    for col in (2, 3, 4):
+        env.step(col)
+    obs, _, terminated, _, _ = env.step(6)  # opponent wins (2,3,4,5 would be
+    # the LEARNER's own horizontal four — the trap this test fell into once)
+    assert terminated
+    # Here the loser is the learner, and the observation is the learner's:
+    # the winner's discs are in plane 1 again, but for the opposite reason.
+    assert [bool(obs[1][r, 1]) for r in range(4)] == [True] * 4
+
+
+def test_terminal_mask_is_all_true_not_all_false():
+    """All-False is the intuitive encoding and it is wrong: masking.py
+    asserts >= 1 legal action per row, and any consumer of next_mask hits it.
+    PPO discards next_masks so this stayed invisible in a probe; the DQN path
+    does consume them.
+
+    The terminal position must have at least one FULL column, or the board's
+    own legal_mask is already all-True and "emit all-True" is untested — a
+    mutation replacing the special case with a plain legal_mask() survived a
+    version of this test that won in an otherwise-empty board.
+    """
+    # A full board: legal_mask() would be all-FALSE here, the exact row that
+    # trips masking.py's >= 1-legal assertion.
+    env = Connect4Env(opponent=ScriptedOpponent(DRAW_42[1::2]))
+    reset_seat(env, learner_first=True)
+    for col in DRAW_42[0::2]:
+        _, _, terminated, _, info = env.step(col)
+    assert terminated and env.board.full()
+    assert not env.board.legal_mask().any(), "fixture should end on a full board"
+    assert info["action_mask"].all(), "terminal mask must be all-True, not all-False"
+
+    # A win with one column full and others open: the mask must STILL be
+    # all-True, not merely non-empty. The two sides alternate in column 0
+    # until it holds six discs (so nobody wins there), then the opponent
+    # stacks column 1 for the win while the learner spreads across 2,3,4,6 —
+    # not 2,3,4,5, which would be the learner's own horizontal four.
+    env = Connect4Env(opponent=ScriptedOpponent([0, 0, 0, 1, 1, 1, 1]))
+    reset_seat(env, learner_first=True)
+    for col in (0, 0, 0, 2, 3, 4):
+        _, _, terminated, _, info = env.step(col)
+        assert not terminated
+    assert not env.board.legal_mask()[0], "column 0 should be full"
+    _, reward, terminated, _, info = env.step(6)
+    assert terminated and reward == -1.0
+    assert not env.board.legal_mask().all(), "a column must still be full here"
+    assert info["action_mask"].all(), "terminal mask must be all-True"
+
+
+def test_illegal_learner_column_raises():
+    env = Connect4Env(opponent="random")
+    reset_seat(env, learner_first=True)
+    for _ in range(3):
+        env.step(0)  # 3 learner discs; the opponent may add more
+    while env.board.legal_mask()[0]:
+        env.step(0)
+    with pytest.raises(ValueError, match="illegal column"):
+        env.step(0)
+    with pytest.raises(ValueError, match="illegal column"):
+        env.step(COLS)  # out of range
+
+
+def test_illegal_opponent_column_raises_loudly():
+    """A silently-dropped illegal opponent move would read as a policy quirk
+    rather than a bug. Both guards: out of range, and a full column."""
+    env = Connect4Env(opponent=OutOfRangeOpponent())
+    reset_seat(env, learner_first=True)
+    with pytest.raises(ValueError, match="opponent chose illegal column"):
+        env.step(3)
+
+    # Learner and opponent alternate in column 0 until it holds six discs
+    # (alternating, so nobody wins), then the opponent insists on it again.
+    env = Connect4Env(opponent=AlwaysColumnZeroOpponent())
+    reset_seat(env, learner_first=True)
+    for _ in range(3):
+        env.step(0)
+    assert not env.board.legal_mask()[0], "column 0 should be full"
+    with pytest.raises(ValueError, match="opponent chose illegal column"):
+        env.step(1)
+
+
+def test_outcome_is_only_emitted_at_terminal_and_in_domain():
+    # A RANDOM learner against the random opponent: a fixed leftmost-legal
+    # policy loses to `heuristic` essentially always, so the win outcome would
+    # never be sampled and the domain assertion would be vacuous.
+    env = Connect4Env(opponent="random")
+    rng = np.random.default_rng(0)
+    seen = set()
+    for episode in range(200):
+        obs, info = env.reset(seed=episode)
+        assert "outcome" not in info
+        done = False
+        while not done:
+            mask = info["action_mask"]
+            action = int(rng.choice(np.flatnonzero(mask)))
+            obs, reward, done, truncated, info = env.step(action)
+            assert truncated is False, "this env never truncates"
+            if not done:
+                assert "outcome" not in info
+                assert reward == 0.0
+        assert info["outcome"] in (-1, 0, 1)
+        assert float(info["outcome"]) == reward  # reward IS the outcome
+        seen.add(info["outcome"])
+    assert {-1, 1} <= seen
+
+
+def test_observations_never_alias_the_board_or_each_other():
+    env = Connect4Env(opponent="random")
+    obs, _ = reset_seat(env, learner_first=True)[:2]
+    assert not np.shares_memory(obs, env.board.board)
+    next_obs, _, _, _, _ = env.step(3)
+    assert obs is not next_obs
+    assert not np.shares_memory(obs, next_obs)
+    assert not np.shares_memory(next_obs, env.board.board)
+    before = next_obs.copy()
+    env.step(4)
+    assert np.array_equal(next_obs, before), "a returned obs must not mutate later"
+
+
+def test_env_draw_reports_outcome_zero():
+    """The draw branch is 0.27% of random games and was never reached in 300
+    eval episodes, so it is driven here by script."""
+    env = Connect4Env(opponent=ScriptedOpponent(DRAW_42[1::2]))
+    reset_seat(env, learner_first=True)
+    reward = None
+    for col in DRAW_42[0::2]:
+        obs, reward, terminated, _, info = env.step(col)
+    assert terminated and reward == 0.0 and info["outcome"] == 0
+    assert env.board.full()
+
+
+def test_env_win_on_the_final_disc_is_a_win_not_a_draw():
+    """Win-before-full ordering, at the env level, on BOTH seats. The board
+    is full and someone won; checking fullness first would report a draw."""
+    # Learner second -> the learner plays the odd indices, so move 41 (the
+    # winning one) is the learner's.
+    env = Connect4Env(opponent=ScriptedOpponent(WIN_ON_42[0::2]))
+    reset_seat(env, learner_first=False)
+    for col in WIN_ON_42[1::2]:
+        obs, reward, terminated, _, info = env.step(col)
+    assert env.board.full()
+    assert terminated and reward == 1.0 and info["outcome"] == 1
+
+    # Learner first -> move 41 is the opponent's.
+    env = Connect4Env(opponent=ScriptedOpponent(WIN_ON_42[1::2]))
+    reset_seat(env, learner_first=True)
+    for col in WIN_ON_42[0::2]:
+        obs, reward, terminated, _, info = env.step(col)
+    assert env.board.full()
+    assert terminated and reward == -1.0 and info["outcome"] == -1
+
+
+def test_both_seats_occur_and_are_roughly_balanced():
+    env = Connect4Env(opponent="random")
+    first = [bool(env.reset(seed=s)[0].sum() == 0) for s in range(400)]
+    assert 0.4 < np.mean(first) < 0.6, f"first-player flip is skewed: {np.mean(first)}"
+
+
+def test_truncation_path_is_exercised_by_a_time_limit():
+    """truncated is always False on this env, so the path is dead here — and
+    load-bearing in Phase 5, where poke-env sets truncated for forfeits, ties
+    and timer losses. Force it with TimeLimit so the plumbing is proven."""
+    env = gym.wrappers.TimeLimit(Connect4Env(opponent="random"), max_episode_steps=2)
+    obs, info = env.reset(seed=0)
+    for step in range(2):
+        obs, reward, terminated, truncated, info = env.step(
+            int(np.flatnonzero(info["action_mask"])[0])
+        )
+        if terminated:
+            pytest.skip("episode ended on its own before the limit")
+    assert truncated and not terminated
+    assert "outcome" not in info, "a truncated game has no outcome"
+
+
+def test_rng_draw_order_is_pinned():
+    """One RNG stream has three consumers — the first-player flip,
+    opponent.select(), and the heuristic's random fallback — and nothing but
+    this test fixes their order. Reordering them silently changes every
+    seeded result in the phase, so the golden values are deliberate: if this
+    fails, the question is whether the reorder was intended, not whether the
+    test is too strict."""
+    env = Connect4Env(opponent="random")
+    seats, replies = [], []
+    for seed in range(8):
+        obs, info = env.reset(seed=seed)
+        seats.append(int(obs.sum() == 0))  # 1 = learner moves first
+        obs, _, _, _, _ = env.step(int(np.flatnonzero(info["action_mask"])[0]))
+        replies.append(int(np.flatnonzero(obs[1].any(axis=0))[-1]))
+    # Both are pinned: the seat draw alone would not notice select() and the
+    # opponent's draw swapping places in the stream.
+    assert seats == [1, 0, 1, 1, 1, 1, 0, 1], f"first-player draws moved: {seats}"
+    assert replies == [4, 5, 1, 0, 6, 5, 3, 4], f"opponent draws moved: {replies}"
+
+
+# ----------------------------------------------------------------- opponents
+
+def test_make_opponent_resolves_names_and_passes_objects_through():
+    assert isinstance(make_opponent("random"), RandomOpponent)
+    assert isinstance(make_opponent("heuristic"), HeuristicOpponent)
+    obj = RandomOpponent()
+    assert make_opponent(obj) is obj
+    with pytest.raises(ValueError, match="unknown opponent"):
+        make_opponent("alphabeta9")
+
+
+def test_opponents_only_ever_play_legal_columns():
+    rng = np.random.default_rng(0)
+    for opponent in (RandomOpponent(), HeuristicOpponent()):
+        env = Connect4Env(opponent=opponent)
+        for episode in range(100):
+            obs, info = env.reset(seed=episode)
+            done = False
+            while not done:  # the env raises on an illegal opponent column
+                legal = np.flatnonzero(info["action_mask"])
+                obs, _, done, _, info = env.step(int(rng.choice(legal)))
+
+
+def test_heuristic_takes_the_win_and_blocks_the_threat():
+    """Win-in-one takes priority over blocking: with both available it must
+    win rather than defend."""
+    opponent = HeuristicOpponent()
+    rng = np.random.default_rng(0)
+
+    # Opponent (plane 0) has three in column 0; it must complete the line.
+    board = Connect4Board()
+    for _ in range(3):
+        board.board[board.height(0), 0] = 1
+    obs = np.stack([board.board == 1, board.board == -1])
+    assert opponent.move(obs, board.legal_mask(), rng) == 0
+
+    # Learner (plane 1) has three in column 2 and the opponent has nothing:
+    # the opponent must block.
+    board = Connect4Board()
+    for _ in range(3):
+        board.board[board.height(2), 2] = -1
+    obs = np.stack([board.board == 1, board.board == -1])
+    assert opponent.move(obs, board.legal_mask(), rng) == 2
+
+    # Both available: winning beats blocking.
+    board = Connect4Board()
+    for _ in range(3):
+        board.board[board.height(0), 0] = 1
+        board.board[board.height(2), 2] = -1
+    obs = np.stack([board.board == 1, board.board == -1])
+    assert opponent.move(obs, board.legal_mask(), rng) == 0
+
+
+def test_random_opponent_ignores_the_observation():
+    """Recorded, not celebrated. This is exactly why the rejected chunk gate
+    ('beats random >= 90%') could not detect a wrong opponent perspective:
+    with this opponent, the flipped and correct envs are bit-identical."""
+    opponent = RandomOpponent()
+    board = Connect4Board()
+    obs = np.stack([board.board == 1, board.board == -1])
+    mask = board.legal_mask()
+    a = [opponent.move(obs, mask, np.random.default_rng(0)) for _ in range(50)]
+    b = [opponent.move(obs[::-1], mask, np.random.default_rng(0)) for _ in range(50)]
+    assert a == b
+
+
+def test_opponents_are_frozen_at_the_install_point():
+    """The no-training contract. Rule-based opponents no-op freeze(), but the
+    env must still CALL it: chunk 2's AgentOpponent wraps a live network, and
+    a snapshot that kept training would silently track the learner."""
+
+    class FreezeRecorder(Opponent):
+        def __init__(self):
+            self.frozen = 0
+
+        def move(self, obs, mask, rng):
+            return int(np.flatnonzero(mask)[0])
+
+        def freeze(self):
+            self.frozen += 1
+
+    opponent = FreezeRecorder()
+    Connect4Env(opponent=opponent)
+    assert opponent.frozen == 1, "the env must freeze the opponent it installs"
+
+
+def test_select_is_called_once_per_episode():
+    """Which member plays is drawn per EPISODE, never mid-game: an opponent
+    that changed identity between plies would make the episode incoherent."""
+
+    class CountingSelector(RandomOpponent):
+        def __init__(self):
+            self.selects = 0
+
+        def select(self, rng):
+            self.selects += 1
+            return self
+
+    opponent = CountingSelector()
+    env = Connect4Env(opponent=opponent)
+    for episode in range(5):
+        obs, info = env.reset(seed=episode)
+        done = False
+        while not done:
+            obs, _, done, _, info = env.step(int(np.flatnonzero(info["action_mask"])[0]))
+    assert opponent.selects == 5

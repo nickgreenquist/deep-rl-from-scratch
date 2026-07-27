@@ -27,6 +27,7 @@ that pass while the game is broken:
   `Connect4Env` possible, so read that docstring too.
 """
 
+import gymnasium as gym
 import numpy as np
 
 ROWS, COLS = 6, 7
@@ -118,3 +119,165 @@ class Connect4Board:
         return "\n".join(
             "".join(glyphs[int(v)] for v in self.board[row]) for row in reversed(range(ROWS))
         )
+
+
+class Connect4Env(gym.Env):
+    """Connect 4 as a single-agent env: the learner is always the agent, and
+    the frozen opponent lives INSIDE `step()` as part of the dynamics.
+
+    One `step()` is therefore one full exchange — the learner's move and the
+    opponent's reply — and the opponent's own transitions are never stored.
+    That halves the data from a symmetric game, and the 2x is genuinely
+    forfeited: collecting both sides is valid only under strict mirror
+    self-play, which would forbid the historical-snapshot pool that is the
+    entire point of Phase 4, and no published off-policy correction exists
+    for the historical-opponent case. What it buys is that the classic
+    perspective bug — storing P2's observations encoded from P1's view —
+    cannot occur here, because P2's trajectory does not exist.
+
+    **Perspective is the whole design.** `Connect4Board` is canonical (+1 is
+    always the player to move) and `drop()` negates, so "the observation" is
+    egocentric by construction and neither side needs to know its seat. There
+    are four places a perspective can still go wrong, all probed in
+    `tests/test_connect4.py`:
+
+    1. the observation handed to the LEARNER;
+    2. the observation handed to the FROZEN OPPONENT — the dangerous one,
+       because under self-play both sides are the same network, so a wrong
+       perspective here is symmetric and the loop cannot detect it;
+    3. the sign of the reward on the opponent's reply;
+    4. terminal `next_obs`, whose perspective flips with WHO ended the game:
+       after the learner's winning move the board has already negated, so the
+       final observation is from the opponent's side. This is left as-is and
+       recorded rather than fixed. It is inert under PPO — `compute_gae`
+       multiplies the bootstrap by `(1 - terminated)` and this env never
+       truncates — but it does contradict `rollout.py`'s stated per-row
+       invariant, so any future consumer that reads terminal `next_obs` for
+       anything other than a zeroed bootstrap must revisit it.
+
+    **Win-before-full ordering is load-bearing**: the 42nd disc can complete
+    a line, so "board full -> draw" must be checked only AFTER "that move
+    won", on both sides. A fixture pins the exact position.
+
+    **Terminal states emit an all-True mask, not all-False.** All-False is
+    the intuitive encoding and it is wrong: `rl/common/masking.py` asserts at
+    least one legal action per row, and an all-False row reaches it through
+    any consumer of `next_mask`. PPO happens to discard `next_masks`, so this
+    was invisible in a probe (7 all-False masks over 4000 vector steps
+    reached `act()` zero times) — but the DQN path provably does consume
+    them, so the env must not emit a row that only one algorithm survives.
+
+    `truncated` is always False: the game is bounded by 42 plies, so nothing
+    ever cuts an episode early. Phase 5 is the opposite — poke-env sets
+    `truncated=True` for forfeits, ties and timer losses — so the truncation
+    path is exercised here with a `TimeLimit` wrapper in the tests rather
+    than left dead until the capstone finds it.
+
+    Transferability note for Phase 5: what carries over is the LEARNER-FACING
+    contract (a 5-tuple, an opponent held as a plain policy object, a
+    per-episode opponent draw), not the opponent's location. poke-env's
+    `PokeEnv` is a two-seat PettingZoo `ParallelEnv` with no opponent
+    parameter; the opponent enters one level up via `SingleAgentWrapper`.
+
+    RNG: one stream (`self.np_random`) has three consumers, in this fixed
+    order per episode — the first-player flip, `opponent.select()`, then any
+    number of heuristic fallback draws. Nothing but this note and
+    `test_rng_draw_order_is_pinned` fixes that order, and reordering it
+    silently changes every seeded result.
+    """
+
+    metadata = {"render_modes": ["ansi"]}
+
+    def __init__(self, opponent="random", render_mode: str | None = None):
+        # Deferred, and the deferral is structural rather than cosmetic:
+        # HeuristicOpponent reuses Connect4Board's win detection (so the
+        # heuristic and the env cannot disagree about what a win is), which
+        # makes rl.selfplay.opponents depend on this module. Importing it at
+        # module scope here would close the cycle and break both imports.
+        from rl.selfplay.opponents import make_opponent
+
+        self.action_space = gym.spaces.Discrete(COLS)
+        # bool planes, MinAtar's own convention — which also makes rank-3 obs
+        # select ConvQNet for both PPO heads by the existing no-config-key
+        # rule, with no config change anywhere.
+        self.observation_space = gym.spaces.Box(0, 1, (2, ROWS, COLS), dtype=bool)
+        self.render_mode = render_mode
+        # `opponent` may be a name from the config or a live object (chunk 2
+        # passes the shared snapshot pool). Freezing at the INSTALL point is
+        # the contract: a trainable opponent cannot slip in unfrozen because
+        # some other call site forgot to freeze it.
+        self.opponent_source = make_opponent(opponent)
+        self.opponent_source.freeze()
+        self.board = Connect4Board()
+        self._opponent = self.opponent_source
+
+    def _obs(self) -> np.ndarray:
+        """Freshly allocated every call — never a view of the board, and
+        never the same object twice, so `obs` and `next_obs` from one step
+        cannot alias."""
+        return self.board.planes()
+
+    def _mask(self, terminated: bool) -> np.ndarray:
+        return np.ones(COLS, dtype=bool) if terminated else self.board.legal_mask()
+
+    def _opponent_move(self) -> bool:
+        """Play the opponent's reply; return True if it won.
+
+        The board has already been negated by the learner's `drop()`, so
+        `planes()` here is canonicalized to the OPPONENT's perspective — site
+        2 above. The legality check is loud on purpose: a silently-dropped
+        illegal opponent move would look like a policy quirk, not a bug.
+        """
+        mask = self.board.legal_mask()
+        col = int(self._opponent.move(self._obs(), mask, self.np_random))
+        if not (0 <= col < COLS and mask[col]):
+            raise ValueError(f"opponent chose illegal column {col} (mask {mask.tolist()})")
+        return self.board.drop(col)
+
+    def reset(self, *, seed=None, options=None):
+        super().reset(seed=seed)
+        self.board = Connect4Board()
+        # Randomized first player: Connect 4 is a first-player win under
+        # perfect play, so a fixed seat would make the task asymmetric and
+        # the self-play equilibrium uninterpretable.
+        learner_first = bool(self.np_random.integers(2))
+        self._opponent = self.opponent_source.select(self.np_random)
+        if not learner_first:
+            self._opponent_move()
+        return self._obs(), {"action_mask": self._mask(False)}
+
+    def step(self, action):
+        col = int(action)
+        mask = self.board.legal_mask()
+        if not (0 <= col < COLS and mask[col]):
+            # Raise rather than penalize: a masked agent selecting an illegal
+            # column means the masking contract broke somewhere upstream, and
+            # a penalty would train around the bug instead of surfacing it.
+            raise ValueError(f"illegal column {col} (mask {mask.tolist()})")
+        outcome: int | None = None
+        if self.board.drop(col):
+            outcome = 1
+        elif self.board.full():
+            outcome = 0
+        elif self._opponent_move():
+            outcome = -1
+        elif self.board.full():
+            outcome = 0
+        terminated = outcome is not None
+        info = {"action_mask": self._mask(terminated)}
+        if terminated:
+            # The metric of record. `eval/win_rate` is derived from this and
+            # NEVER from the sign of the return: measured, a flipped reward
+            # sign makes a `return > 0` win rate read 1.000 and pass its own
+            # detector at the ceiling.
+            info["outcome"] = outcome
+        # Terminal-only reward, equal to the outcome: +1 win, -1 loss, 0 draw
+        # or game continuing. Every reward is a delayed reward, which is why
+        # the configs run gamma = 1.0.
+        reward = float(outcome) if terminated else 0.0
+        return self._obs(), reward, terminated, False, info
+
+    def render(self):
+        if self.render_mode == "ansi":
+            return self.board.render()
+        return None
