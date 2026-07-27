@@ -8,7 +8,7 @@ From-scratch deep RL in PyTorch, built as a portfolio piece over multiple months
 
 ## Hard rules
 
-- **No RL libraries.** Never import or depend on Stable-Baselines3, RLlib, Tianshou, CleanRL, etc. Reading their source for reference is fine; depending on them is not.
+- **No RL libraries.** Never import or depend on Stable-Baselines3, RLlib, Tianshou, CleanRL, etc. Reading their source for reference is fine; depending on them is not. **One narrow carve-out (Phase 4):** `open_spiel` is a pinned **dev-only** dependency used solely as a differential-test oracle for the Connect 4 board — it also ships `open_spiel.python.algorithms.{dqn,ppo,...}`, so tests may import `pyspiel.load_game("connect_four")` and **never** `open_spiel.python.*`. Pinned by a test that greps the tree.
 - **Plan before editing.** State which files you'll create/change and why; wait for a go-ahead. Keep diffs clean and reviewable.
 - **Small, single-purpose commits.** End every session at a green, committable state.
 - **Minimal dependencies.** Stdlib where possible; config is a dataclass + YAML, no experiment frameworks. Pin versions in `pyproject.toml`.
@@ -29,7 +29,7 @@ From-scratch deep RL in PyTorch, built as a portfolio piece over multiple months
 - Action masking is a harness contract (capstone: legal actions change every turn): Discrete-action envs always emit `info["action_mask"]` — all-True via the `ActionMask` wrapper when nothing is illegal — and algorithms mask logits/Q through `rl/common/masking` (finite `-1e8` sentinel, never `-inf`; masked path always exercised, no `mask is None` branches in algorithm code). The value head is never masked; masking applies at eval time too.
 - Single entry point: `python -m rl.train --config configs/<run>.yaml`. Every algorithm plugs into it.
 - Logging: W&B is the default backend, TensorBoard behind a flag as the offline fallback, both wrapped by a thin logger interface. No W&B calls in algorithm code.
-- **Locked metric names** — reuse these exactly in every algorithm: `rollout/episode_return`, `rollout/episode_length`, `eval/return_mean`, `eval/return_std`, `time/steps_per_sec`, plus `loss/*` for per-algorithm losses.
+- **Locked metric names** — reuse these exactly in every algorithm: `rollout/episode_return`, `rollout/episode_length`, `eval/return_mean`, `eval/return_std`, `time/steps_per_sec`, `eval/win_rate`, plus `loss/*` for per-algorithm losses and `selfplay/*` for opponent-pool diagnostics (Phase 4+; logged from `rl/train.py`, never from algorithm or pool code). `eval/win_rate` is the fraction of eval episodes the agent **won**, counted from an env-supplied `info["outcome"] ∈ {-1, 0, +1}` and **never from the sign of the return** — a reward-sign inversion would otherwise report 100% and pass its own detector (measured). Emitted only when `eval_win_rate` is set, so every pre-Phase-4 config and run is untouched.
 - Evaluation: fixed eval seeds, N episodes, deterministic policy, mean ± std; kept separate from training rollouts.
 - `tests/test_harness.py` (CartPole sanity test) must stay green for the life of the project — it is the known-good path when a reward curve goes flat, since in RL a bug and a bad hyperparameter look identical.
 - Env factory (`rl/envs/make.py`) keeps a clean seam for vectorized envs — PPO needs them in Phase 2.
