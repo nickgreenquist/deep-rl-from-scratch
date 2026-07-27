@@ -217,6 +217,7 @@ class PPOAgent(Agent):
         max_grad_norm: float,
         hidden_sizes: list[int],
         lr_anneal_steps: int = 0,
+        kernel_size: int = 3,
     ):
         # A flat obs vector or channel-first image planes, same rule as DQN.
         if not isinstance(observation_space, gym.spaces.Box) or len(observation_space.shape) not in (1, 3):
@@ -255,8 +256,12 @@ class PPOAgent(Agent):
             # Rank-3 obs (MinAtar planes) select the conv net — DQN's rule, no
             # config key. ConvQNet hardcodes ReLU, which is what every conv-PPO
             # reference uses; dueling stays off (see _orthogonal_init).
+            # kernel_size default 3 is the value every existing config ran;
+            # 4 is Phase 4's pre-registered receptive-field probe arm.
             def build(out_dim: int) -> nn.Module:
-                return ConvQNet(observation_space.shape, hidden_sizes, out_dim)
+                return ConvQNet(
+                    observation_space.shape, hidden_sizes, out_dim, kernel_size=kernel_size
+                )
         else:
             # Tanh hiddens: the feedforward-PPO reference default the numeric
             # hyperparameters were validated under.

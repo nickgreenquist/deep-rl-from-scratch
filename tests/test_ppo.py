@@ -240,6 +240,44 @@ def test_act_batched_rank4_obs_returns_one_action_per_env():
     assert ((0 <= actions) & (actions < 6)).all()
 
 
+def test_kernel_size_knob_matches_the_preregistered_param_counts():
+    """Phase 4's receptive-field fork (PLAN.md): a Connect 4 win is a line of
+    FOUR, so kernel_size 4 lets one conv unit see a whole line where the
+    inherited 3x3 sees at most three of it. The knob defaults to 3 — every
+    existing config and checkpoint is untouched — and the counts pin PLAN's
+    measured numbers, so the probe arm is a config key rather than a code
+    edit at pathfinder time."""
+
+    def c4_agent(**kwargs):
+        torch.manual_seed(0)
+        return PPOAgent(
+            observation_space=gym.spaces.Box(0, 1, (2, 6, 7), np.bool_),
+            action_space=gym.spaces.Discrete(7),
+            num_envs=2,
+            device="cpu",
+            lr=2.5e-4,
+            gamma=1.0,
+            gae_lambda=0.95,
+            rollout_steps=4,
+            epochs=1,
+            minibatches=2,
+            clip_eps=0.2,
+            entropy_coef=0.01,
+            value_coef=0.5,
+            max_grad_norm=0.5,
+            hidden_sizes=[128],
+            **kwargs,
+        )
+
+    assert sum(p.numel() for p in c4_agent().params) == 83_816
+    assert sum(p.numel() for p in c4_agent(kernel_size=3).params) == 83_816
+    probe = c4_agent(kernel_size=4)
+    assert sum(p.numel() for p in probe.actor.parameters()) == 26_135
+    # The 4x4 forward really runs on the 6x7 board (3x4 conv output).
+    action = probe.act(np.zeros((2, 6, 7), dtype=bool), np.ones(7, dtype=bool))
+    assert isinstance(action, int) and 0 <= action < 7
+
+
 def test_cartpole_ppo_smoke(tmp_path, monkeypatch):
     """PPO through the real vector train loop: rollouts fill on schedule,
     the epoch loop runs, eval and checkpointing on the unchanged scalar
