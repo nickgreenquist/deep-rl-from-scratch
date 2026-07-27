@@ -363,6 +363,67 @@ def test_win_rate_is_absent_from_the_log_when_disabled(tmp_path, monkeypatch):
     assert "eval/return_mean" in keys
 
 
+def _pool_selfplay(**overrides):
+    base = {"opponent": "self", "eval_opponent": "heuristic",
+            "pool_size": 4, "push_every_updates": 2, "latest_prob": 0.8}
+    base.update(overrides)
+    return base
+
+
+def test_pool_mode_trains_end_to_end_and_the_pool_grows(tmp_path, monkeypatch):
+    """The chunk-2 wiring, observed from the log: the step-0 push before the
+    loop, then one push per push_every_updates rollouts. 256 steps at
+    4 envs x 16 rollout_steps = 4 updates (steps 64/128/192/256), so
+    push_every 2 lands pushes at 128 and 256."""
+    monkeypatch.chdir(tmp_path)
+    logger = _record_metrics(monkeypatch)
+    train(connect4_config(run_name="pool", selfplay=_pool_selfplay()))
+    sizes = [(step, m["selfplay/pool_size"])
+             for step, m in logger.records if "selfplay/pool_size" in m]
+    assert sizes == [(0, 1), (128, 2), (256, 3)]
+    # Eval still runs against the fixed anchor and reports the metric of
+    # record — under self-play the pool would score ~50% by construction.
+    keys = {key for _, metrics in logger.records for key in metrics}
+    assert "eval/win_rate" in keys
+
+
+def test_pool_metric_is_absent_for_fixed_opponent_configs(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    logger = _record_metrics(monkeypatch)
+    train(connect4_config(run_name="fixed"))
+    keys = {key for _, metrics in logger.records for key in metrics}
+    assert "selfplay/pool_size" not in keys
+
+
+def test_pool_mode_requires_the_pool_keys(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    cfg = connect4_config(
+        selfplay={"opponent": "self", "eval_opponent": "heuristic", "pool_size": 4}
+    )
+    with pytest.raises(ValueError, match="latest_prob"):
+        train(cfg)
+
+
+def test_pool_mode_needs_a_vectorized_algorithm(tmp_path, monkeypatch):
+    """Snapshots push at rollout boundaries; the scalar loop has none, and
+    silently accepting would train against the frozen step-0 snapshot
+    forever while looking like self-play."""
+    monkeypatch.chdir(tmp_path)
+    cfg = connect4_config(agent={"algo": "random"}, selfplay=_pool_selfplay())
+    with pytest.raises(ValueError, match="vectorized"):
+        train(cfg)
+
+
+def test_eval_opponent_self_raises_loudly(tmp_path, monkeypatch):
+    """Only the TRAINING opponent string is replaced with the pool object.
+    `eval_opponent: self` reaches make_opponent unreplaced and dies there —
+    the guard that keeps eval pinned to a fixed external anchor."""
+    monkeypatch.chdir(tmp_path)
+    cfg = connect4_config(selfplay=_pool_selfplay(eval_opponent="self"))
+    with pytest.raises(ValueError, match="unknown opponent"):
+        train(cfg)
+
+
 def test_connect4_trains_end_to_end_with_win_rate(tmp_path, monkeypatch):
     """PPO through the real vector loop on Connect 4: conv net selected by obs
     rank with no config key, varying masks, the opponent inside each sub-env,

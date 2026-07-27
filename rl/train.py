@@ -35,6 +35,7 @@ from rl.envs.normalize import (
     NormalizeReward,
     RunningMeanStd,
 )
+from rl.selfplay.pool import SnapshotPool
 
 
 # Algo registry: make_agent constructs from it, and train() reads the class's
@@ -142,10 +143,30 @@ def train(cfg: Config) -> None:
             "sub-env and would keep seeing raw observations"
         )
     # Self-play configs pass their opponent into the env; every other config
-    # gets {} and is bit-for-bit unaffected. In chunk 2 the training value
-    # becomes the live snapshot pool object rather than a name — same seam,
-    # because a pool IS an Opponent under the protocol.
+    # gets {} and is bit-for-bit unaffected. `opponent: self` trains against
+    # the snapshot pool: the string is replaced with the live pool OBJECT
+    # before env construction, so all N sub-envs share it through the
+    # caller-kwargs seam (a pool IS an Opponent under the protocol). If the
+    # string ever reaches an env unreplaced — including `eval_opponent:
+    # self` — make_opponent raises "unknown opponent", so nothing can
+    # silently evaluate against the pool.
     train_env_kwargs = selfplay_env_kwargs(cfg, "opponent")
+    pool, push_every = None, 0
+    if train_env_kwargs.get("opponent") == "self":
+        if not vectorized:
+            raise ValueError(
+                "selfplay opponent 'self' needs a vectorized algorithm: "
+                "snapshots push at rollout boundaries, which the scalar "
+                "loop does not have"
+            )
+        missing = {"pool_size", "latest_prob", "push_every_updates"} - cfg.selfplay.keys()
+        if missing:
+            raise ValueError(f"selfplay opponent 'self' needs {sorted(missing)}")
+        push_every = cfg.selfplay["push_every_updates"]
+        if push_every < 1:
+            raise ValueError(f"push_every_updates must be >= 1, got {push_every}")
+        pool = SnapshotPool(cfg.selfplay["pool_size"], cfg.selfplay["latest_prob"])
+        train_env_kwargs["opponent"] = pool
     if vectorized:
         env = make_vec_env(cfg.env_id, cfg.seed, cfg.num_envs, env_kwargs=train_env_kwargs)
     else:
@@ -173,9 +194,16 @@ def train(cfg: Config) -> None:
     # Before the logger: even a run that dies in wandb.init leaves a stamped dir.
     _write_run_metadata(out_dir, cfg)
     logger = make_logger(cfg)
+    if pool is not None:
+        # Before the loop: _vector_loop's first statement is envs.reset(),
+        # which draws an opponent per sub-env, and select() on an empty pool
+        # raises. The step-0 snapshot is also the naive arm's starting
+        # opponent and the strided pool's permanent anchor.
+        pool.push(agent)
+        logger.log({"selfplay/pool_size": len(pool)}, 0)
 
     if vectorized:
-        _vector_loop(cfg, env, eval_env, agent, logger, out_dir, normalizers)
+        _vector_loop(cfg, env, eval_env, agent, logger, out_dir, normalizers, pool, push_every)
     else:
         _scalar_loop(cfg, env, eval_env, agent, logger, out_dir)
 
@@ -268,6 +296,8 @@ def _vector_loop(
     logger: Logger,
     out_dir: Path,
     normalizers: dict[str, RunningMeanStd] | None = None,
+    pool: SnapshotPool | None = None,
+    push_every: int = 0,
 ) -> None:
     """N lockstep envs, batched transitions — vectorized (on-policy) agents.
 
@@ -285,6 +315,7 @@ def _vector_loop(
     ep_returns = np.zeros(num_envs)
     ep_lengths = np.zeros(num_envs, dtype=np.int64)
     step, next_eval = 0, cfg.eval_every
+    updates_done = 0
     last_step, last_time = 0, time.perf_counter()
     # Checkpoint ladder by threshold crossing. `step` advances by num_envs, so
     # it lands ON a multiple of checkpoint_every only when the two divide;
@@ -309,6 +340,17 @@ def _vector_loop(
         )
         if update_metrics:
             logger.log(update_metrics, step)
+            # A truthy report means the rollout just drained — the only legal
+            # push point: snapshots enter the pool at rollout boundaries so
+            # that within a rollout the opponent DISTRIBUTION is fixed, which
+            # is what PPO's importance ratios require. Which member plays is
+            # the other swap boundary, drawn per episode at env reset.
+            updates_done += 1
+            if pool is not None and updates_done % push_every == 0:
+                pool.push(agent)
+                # selfplay/* is logged from here, never from pool code
+                # (locked metric-namespace rule, CLAUDE.md).
+                logger.log({"selfplay/pool_size": len(pool)}, step)
         # Episode returns are always accumulated in TRUE env units. With
         # reward normalization on, `rewards` is scaled by a running statistic
         # that itself moves during training, so logging it would make
