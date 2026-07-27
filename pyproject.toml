@@ -31,7 +31,12 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest==9.1.1"]
+# open_spiel is a DEV-ONLY differential-test oracle for the Phase 4 Connect 4
+# board — the narrow carve-out from the no-RL-libraries rule (see CLAUDE.md).
+# It also ships open_spiel.python.algorithms.{dqn,ppo,...}; tests may import
+# `pyspiel.load_game("connect_four")` and NEVER open_spiel.python.*, which
+# tests/test_connect4_oracle.py pins by grepping the tree.
+dev = ["pytest==9.1.1", "open_spiel==2.0.1"]
 
 # Deferred to later phases — install when the phase starts, not before:
 #   poke-env + a local Node.js Showdown server (Phase 5 capstone)
