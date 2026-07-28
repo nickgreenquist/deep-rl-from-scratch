@@ -1,0 +1,157 @@
+"""Exact Connect 4 solver (Phase 4 chunk 3): bitboard, negamax, oracle.
+
+Phase 4 has no published training curve to grade against, so absolute
+strength comes from game-theoretic ground truth: this solver labels
+positions, and the Pons benchmark sets corroborate it externally (PLAN.md).
+Correctness of the solver itself comes from two differential tests, neither
+of which trusts the other's representation:
+
+- the bitboard is cross-checked ply-by-ply against `Connect4Board` — the
+  NumPy board already validated against the open_spiel oracle in chunk 1,
+  so agreement here chains this file to that oracle for free;
+- the search is cross-checked against `brute_force`, a no-pruning no-TT
+  no-ordering negamax kept deliberately dumb in this same file.
+
+Why a second board representation at all: NumPy is the slowest of the three
+tried for search (351k nodes/s vs 417k for a flat list and 894k for this
+Python-int bitboard, PLAN.md) — scalar indexing loses, and nothing in a
+negamax inner loop vectorizes. `Connect4Board` keeps its array because the
+observation is a pair of planes; search wants machine words.
+
+Bitboard layout (Pons' encoding): one bit per cell at index
+`col * H1 + row`, row 0 = bottom — the same row convention as
+`Connect4Board`, stated because an inverted convention makes every
+diagonal shift wrong while vertical and horizontal tests still pass.
+H1 = ROWS + 1: each column carries a SENTINEL bit above its top row,
+always 0. The sentinel is what stops the shift-based line detection from
+wrapping a column's top into the next column's bottom — the bitboard twin
+of the numpy negative-index wrap that chunk 1 caught producing phantom
+lines of four.
+
+Two ints describe a position: `current` (the mover's stones) and `mask`
+(all stones). The board is CANONICAL exactly like `Connect4Board`: current
+is always the player to move, so `play()` hands the old opponent's stones
+(`current ^ mask`) to the child as its `current`. `current + mask` is a
+unique position key (the addition sets a bit above each column's stones,
+which encodes whose they are).
+
+Scores are Pons' convention throughout, because the benchmark labels and
+the chunk-3/4 metrics (score regret) consume them directly: signed from
+the player to move, 0 a draw, magnitude `22 - winner's stones` — so a win
+with the winner's Nth stone scores 22 - N, and faster wins score higher.
+The sign alone is the game-theoretic value.
+"""
+
+import numpy as np
+
+from rl.envs.connect4 import CELLS, COLS, CONNECT, ROWS, Connect4Board
+
+# The shift cascade in _alignment doubles pairs into fours; it is written
+# for lines of exactly 4.
+assert CONNECT == 4
+
+H1 = ROWS + 1  # bits per column: ROWS cells + 1 sentinel
+BOTTOM_MASK = tuple(1 << (col * H1) for col in range(COLS))
+TOP_MASK = tuple(1 << (col * H1 + ROWS - 1) for col in range(COLS))
+COLUMN_MASK = tuple(((1 << ROWS) - 1) << (col * H1) for col in range(COLS))
+
+
+def _alignment(stones: int) -> bool:
+    """Does `stones` (one player's discs) contain a line of four?
+
+    Each direction: pairs first (`stones & stones >> d`), then pairs of
+    pairs (`m & m >> 2d`) — four in a line iff both. Shift distances are
+    the bit-index deltas of the layout: 1 vertical, H1 horizontal,
+    H1+1 / H1-1 the two diagonals. The sentinel row keeps every shift
+    from crossing a column boundary.
+    """
+    m = stones & (stones >> 1)  # vertical
+    if m & (m >> 2):
+        return True
+    m = stones & (stones >> H1)  # horizontal
+    if m & (m >> (2 * H1)):
+        return True
+    m = stones & (stones >> (H1 + 1))  # diagonal up-right
+    if m & (m >> (2 * (H1 + 1))):
+        return True
+    m = stones & (stones >> (H1 - 1))  # diagonal up-left
+    if m & (m >> (2 * (H1 - 1))):
+        return True
+    return False
+
+
+class Bitboard:
+    """Canonical Connect 4 position on two Python ints. Immutable style:
+    `play()` returns a new Bitboard (Pons' reference solver also copies
+    per node), so search never needs an undo path."""
+
+    __slots__ = ("current", "mask", "moves")
+
+    def __init__(self, current: int = 0, mask: int = 0, moves: int = 0):
+        self.current = current
+        self.mask = mask
+        self.moves = moves
+
+    def __eq__(self, other) -> bool:
+        return (
+            isinstance(other, Bitboard)
+            and self.current == other.current
+            and self.mask == other.mask
+            and self.moves == other.moves
+        )
+
+    def __repr__(self) -> str:
+        return f"Bitboard(current={self.current:#x}, mask={self.mask:#x}, moves={self.moves})"
+
+    def key(self) -> int:
+        return self.current + self.mask
+
+    def can_play(self, col: int) -> bool:
+        return not self.mask & TOP_MASK[col]
+
+    def _stone(self, col: int) -> int:
+        """The bit the next disc in `col` would occupy: adding the column's
+        bottom bit to `mask` carries up through its stones to the first
+        empty cell."""
+        return (self.mask + BOTTOM_MASK[col]) & COLUMN_MASK[col]
+
+    def is_winning_move(self, col: int) -> bool:
+        """Would the MOVER win by playing `col`? `col` must be playable."""
+        return _alignment(self.current | self._stone(col))
+
+    def play(self, col: int) -> "Bitboard":
+        """Play `col` (must be playable) and return the child position.
+        The child's `current` is the old opponent's stones — the negation
+        `Connect4Board.drop()` does with `board *= -1`, done here by
+        handing over `current ^ mask` (the new stone stays out of it)."""
+        return Bitboard(
+            self.current ^ self.mask, self.mask | self._stone(col), self.moves + 1
+        )
+
+    @classmethod
+    def from_board(cls, board: Connect4Board) -> "Bitboard":
+        """`Connect4Board` -> Bitboard, same canonical perspective (+1 = the
+        mover = `current`). `moves` is derived from the array rather than
+        trusted from the attribute, matching the board's own derive-don't-
+        cache rule: a board built from a raw array defaults `moves=0`."""
+        current = mask = 0
+        for col in range(COLS):
+            for row in range(ROWS):
+                v = board.board[row, col]
+                if v:
+                    bit = 1 << (col * H1 + row)
+                    mask |= bit
+                    if v == 1:
+                        current |= bit
+        return cls(current, mask, int(np.count_nonzero(board.board)))
+
+    def to_board(self) -> Connect4Board:
+        arr = np.zeros((ROWS, COLS), dtype=np.int8)
+        for col in range(COLS):
+            for row in range(ROWS):
+                bit = 1 << (col * H1 + row)
+                if self.current & bit:
+                    arr[row, col] = 1
+                elif self.mask & bit:
+                    arr[row, col] = -1
+        return Connect4Board(arr, self.moves)
