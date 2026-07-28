@@ -193,6 +193,37 @@ def test_solver_matches_brute_force_on_random_endgames():
             assert Solver().solve(bb) == truth
 
 
+def test_narrow_window_searches_do_not_poison_the_table():
+    """The TT-flag guard, given real power. The endgame differential does
+    not catch bounds-stored-as-EXACT — measured by mutation, twice: at
+    <=10 empties nearly every node resolves through the win scan or the
+    full-board draw within a ply or two, so fail-soft bounds nearly always
+    EQUAL the exact value and misreading them changes nothing. The
+    corruption needs depth to express (PLAN.md: the error rate rises with
+    depth), and depth is exactly where the brute-force oracle cannot
+    follow. So this is a consistency test instead: a correct solver
+    returns the same full-window value from a fresh table and from one
+    deliberately stuffed with null-window fail-soft bounds — the
+    chapter-8 usage pattern — while broken flag handling leaks the bounds
+    into the poisoned answer. Positions are kept only when the fresh
+    solve costs 2k-300k nodes: below the band the tree is too shallow for
+    bounds to differ from exact values (the failure above), above it the
+    test gets slow. Fixed seed + fixed rule = deterministic."""
+    rng = np.random.default_rng(5)
+    kept = 0
+    while kept < 8:
+        bb = random_position(rng, int(rng.integers(18, 23)))
+        fresh = Solver()
+        value = fresh.solve(bb)
+        if not 2_000 <= fresh.nodes <= 300_000:
+            continue
+        kept += 1
+        poisoned = Solver()
+        for a in range(-6, 6):
+            poisoned._negamax(bb, a, a + 1)
+        assert poisoned.solve(bb) == value
+
+
 def test_tiny_table_forces_collisions_without_corrupting_values():
     """At size 17 nearly every put lands on an occupied slot, so the
     replace-on-collision path and the stored-key check run constantly; the
