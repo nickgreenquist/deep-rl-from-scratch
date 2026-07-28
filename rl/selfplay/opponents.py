@@ -181,7 +181,13 @@ class AlphaBetaOpponent(Opponent):
         return int(rng.choice([c for c, s in sorted(scores.items()) if s == best]))
 
 
-def play_game(first: Opponent, second: Opponent, rng: np.random.Generator) -> int:
+def play_game(
+    first: Opponent,
+    second: Opponent,
+    rng: np.random.Generator,
+    start: Connect4Board | None = None,
+    moves: "list[int] | None" = None,
+) -> int:
     """One game between two opponents on a raw board, no env: +1 if
     `first` (the first player) wins, 0 a draw, -1 if `second` wins.
 
@@ -193,12 +199,22 @@ def play_game(first: Opponent, second: Opponent, rng: np.random.Generator) -> in
     a line here just as it can in `Connect4Env.step()`. Committed as the
     tournament's game runner so the chunk-4 coverage diagnostic can reuse
     it rather than being rebuilt from session scratch.
+
+    `start` continues the game from a mid-game position instead of an
+    empty board (the value-MSE probe's continuation targets need this);
+    the board is canonical, so `first` is the player to move at `start`,
+    and the outcome sign is from that player's perspective. Played on a
+    copy — the caller's board is never mutated. `moves`, if given, has
+    every played column appended in order (the coverage probe compares
+    move sequences, and the outcome alone cannot distinguish two games).
     """
     players = (first.select(rng), second.select(rng))
-    board = Connect4Board()
+    board = Connect4Board() if start is None else start.copy()
     mover = 0
     while True:
         col = players[mover].move(board.planes(), board.legal_mask(), rng)
+        if moves is not None:
+            moves.append(int(col))
         won = board.drop(int(col))
         if won:
             return 1 if mover == 0 else -1

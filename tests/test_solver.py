@@ -391,3 +391,46 @@ def test_play_game_is_deterministic_given_the_rng():
     first, again = outcomes(), outcomes()
     assert first == again
     assert len(set(first)) > 1  # and the games are not all the same result
+
+
+def test_play_game_records_the_move_sequence():
+    """`moves` must be the played columns in order — the coverage probe
+    distinguishes games by sequence, so a wrong order or a skipped ply
+    would silently merge distinct games. Replaying the recorded sequence
+    through a fresh board must reproduce the outcome."""
+    rng = np.random.default_rng(0)
+    moves: list[int] = []
+    outcome = play_game(
+        ScriptedOpponent(DRAW_42[0::2]), ScriptedOpponent(DRAW_42[1::2]), rng,
+        moves=moves,
+    )
+    assert outcome == 0
+    assert moves == list(DRAW_42)
+    board = Connect4Board()
+    for col in moves[:-1]:
+        assert not board.drop(col)
+    assert not board.drop(moves[-1]) and board.full()
+
+
+def test_play_game_start_position_seats_and_no_mutation():
+    """From a canonical start position, `first` is the player TO MOVE and
+    the outcome sign is from that player's perspective; the caller's board
+    is played on a copy, never mutated."""
+    start, _ = play([0, 1, 0, 1, 0, 1])  # mover: 3 in col 0; other: 3 in col 1
+    frozen = start.board.copy()
+    rng = np.random.default_rng(0)
+
+    moves: list[int] = []
+    assert play_game(
+        ScriptedOpponent([0]), ScriptedOpponent([]), rng, start=start, moves=moves
+    ) == 1
+    assert moves == [0]
+
+    moves = []
+    assert play_game(
+        ScriptedOpponent([2]), ScriptedOpponent([1]), rng, start=start, moves=moves
+    ) == -1
+    assert moves == [2, 1]
+
+    assert np.array_equal(start.board, frozen)
+    assert start.moves == 6
