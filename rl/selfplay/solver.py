@@ -155,3 +155,137 @@ class Bitboard:
                 elif self.mask & bit:
                     arr[row, col] = -1
         return Connect4Board(arr, self.moves)
+
+
+# Centre-first: columns by distance from the middle. Any complete order is
+# correct (a permutation must survive mutation testing as an equivalence
+# control); centre-first is the one that prunes well on this game.
+MOVE_ORDER = (3, 2, 4, 1, 5, 0, 6)
+
+# Transposition-table flags. EXACT is a true minimax value; LOWER/UPPER are
+# fail-soft bounds from a search that cut off. The flag is load-bearing:
+# storing bounds as exact values corrupts 0.13-0.40% of results with the
+# error rate RISING with depth, and the Pons labels structurally cannot see
+# it (they are root values; the corruption shows in interior nodes first) —
+# which is why the differential oracle below exists (PLAN.md).
+EXACT, LOWER, UPPER = 1, 2, 3
+
+# ~1M entries. Bounding the table is required, not an optimization: unbounded
+# it reached 141 MB RSS on a single Middle-Medium position (PLAN.md).
+TT_SIZE = 1048573  # prime, so key % size spreads
+
+
+class TranspositionTable:
+    """Fixed-size, replace-on-collision (Pons' policy). One Python int per
+    entry — `key << 8 | (value + 21) << 2 | flag` — instead of a tuple,
+    which at ~1M entries is the difference between ~40 MB and ~120 MB.
+    0 means empty (a real entry always has a nonzero flag). The full key is
+    stored and checked on probe, so an index collision evicts, never lies.
+    """
+
+    def __init__(self, size: int = TT_SIZE):
+        self.size = size
+        self.entries = [0] * size
+
+    def get(self, key: int) -> "tuple[int, int] | None":
+        entry = self.entries[key % self.size]
+        if entry and entry >> 8 == key:
+            return ((entry >> 2) & 0x3F) - 21, entry & 0x3
+        return None
+
+    def put(self, key: int, value: int, flag: int) -> None:
+        self.entries[key % self.size] = key << 8 | (value + 21) << 2 | flag
+
+
+class Solver:
+    """Exact negamax + alpha-beta over the bitboard. `solve()` returns the
+    Pons-convention score of a live position (see module docstring).
+
+    The table persists across `solve()` calls on purpose — entries are
+    keyed by position and position-invariant, so batch scoring (the Pons
+    sets, the chunk-3/4 policy metrics) warm-starts. A test pins that a
+    shared solver and a fresh-per-position solver agree.
+
+    `nodes` counts negamax entries since construction; the perf numbers in
+    PLAN.md (894k nodes/s) are in these units.
+    """
+
+    def __init__(self, tt_size: int = TT_SIZE):
+        self.tt = TranspositionTable(tt_size)
+        self.nodes = 0
+
+    def solve(self, bb: Bitboard) -> int:
+        if _alignment(bb.current) or _alignment(bb.current ^ bb.mask):
+            raise ValueError("position is already won; solve() wants a live position")
+        # Full window: |score| <= 21 by construction (22 - winner's stones,
+        # >= 1 stone). Tighter bounds exist (a win needs 4 stones) but the
+        # chapter-8 driver is where windows earn their keep.
+        return self._negamax(bb, -(CELLS // 2), CELLS // 2)
+
+    def _negamax(self, bb: Bitboard, alpha: int, beta: int) -> int:
+        self.nodes += 1
+        if bb.moves == CELLS:
+            return 0  # full board, and the mover's opponent did not win
+        # Win-before-full ordering, solver edition: this scan runs before
+        # the draw check can ever fire for the 42nd disc, because at
+        # moves == 41 the position reaches here, not the branch above.
+        for col in MOVE_ORDER:
+            if bb.can_play(col) and bb.is_winning_move(col):
+                return (CELLS + 1 - bb.moves) // 2
+
+        key = bb.key()
+        hit = self.tt.get(key)
+        if hit is not None:
+            value, flag = hit
+            if flag == EXACT:
+                return value
+            if flag == LOWER:
+                alpha = max(alpha, value)
+            else:
+                beta = min(beta, value)
+            if alpha >= beta:
+                return value
+
+        alpha0 = alpha
+        best = -CELLS  # below any real score
+        for col in MOVE_ORDER:
+            if not bb.can_play(col):
+                continue
+            value = -self._negamax(bb.play(col), -beta, -alpha)
+            if value > best:
+                best = value
+                if value > alpha:
+                    alpha = value
+            if alpha >= beta:
+                break
+
+        if best <= alpha0:
+            flag = UPPER
+        elif best >= beta:
+            flag = LOWER
+        else:
+            flag = EXACT
+        self.tt.put(key, best, flag)
+        return best
+
+
+def brute_force(bb: Bitboard) -> int:
+    """The differential oracle: negamax with NOTHING in it — no pruning, no
+    transposition table, no ordering, no early return on a found win. Only
+    usable on positions with few empty cells, which is what the tests feed
+    it. The win-score formula is duplicated from Solver rather than shared
+    on purpose: a helper both sides import would let one bug pass the
+    differential test unseen.
+    """
+    if bb.moves == CELLS:
+        return 0
+    best = -CELLS
+    for col in range(COLS):
+        if not bb.can_play(col):
+            continue
+        if bb.is_winning_move(col):
+            value = (CELLS + 1 - bb.moves) // 2
+        else:
+            value = -brute_force(bb.play(col))
+        best = max(best, value)
+    return best

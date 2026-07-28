@@ -18,8 +18,8 @@ which is exactly what the sentinel row exists to stop.
 import numpy as np
 import pytest
 
-from rl.envs.connect4 import COLS, Connect4Board
-from rl.selfplay.solver import Bitboard
+from rl.envs.connect4 import CELLS, COLS, Connect4Board
+from rl.selfplay.solver import Bitboard, Solver, brute_force
 from tests.test_connect4 import DRAW_42, WIN_FIXTURES, WIN_ON_42
 
 # ---------------------------------------------------------------- bitboard
@@ -108,3 +108,97 @@ def test_keys_are_unique_across_distinct_positions():
             if board.full():
                 break
     assert len(seen) > 300
+
+
+# ------------------------------------------------------------------ solver
+
+
+def bitboard_after(cols) -> Bitboard:
+    bb = Bitboard()
+    for col in cols:
+        bb = bb.play(col)
+    return bb
+
+
+def random_position(rng, stones: int) -> Bitboard:
+    """A live random position with exactly `stones` discs (games that end
+    earlier are discarded and redrawn)."""
+    while True:
+        board, bb = Connect4Board(), Bitboard()
+        for _ in range(stones):
+            col = int(rng.choice(np.flatnonzero(board.legal_mask())))
+            if board.drop(col):
+                break
+            bb = bb.play(col)
+        else:
+            return bb
+
+
+@pytest.mark.parametrize("name", sorted(WIN_FIXTURES))
+def test_win_in_one_scores_exactly(name):
+    """One ply before each win fixture lands, the mover's value is the
+    immediate-win score (22 - the winner's stones) — an immediate win is
+    the best score reachable from any position, so no deeper line beats
+    it. Pins the score formula, not just the sign. Solver only: these
+    positions have 30+ empty cells, and the no-pruning oracle is
+    exponential in empties — it belongs on near-full positions only."""
+    cols = WIN_FIXTURES[name]
+    bb = bitboard_after(cols[:-1])
+    assert Solver().solve(bb) == (CELLS + 1 - bb.moves) // 2
+
+
+def test_double_threat_is_a_forced_loss():
+    """After [1,1,2,2,3] the first player threatens both column 0 and
+    column 4 on the bottom row; the mover has no win of its own and can
+    block only one side, so every reply loses to the opponent's 4th stone:
+    score -(22 - 4) = -18."""
+    assert Solver().solve(bitboard_after([1, 1, 2, 2, 3])) == -18
+
+
+def test_win_on_the_42nd_disc_is_not_a_draw():
+    """Win-before-full, solver edition: at 41 stones the last cell wins, so
+    the value is +1 (a win with the 21st stone), not the draw the full-board
+    branch would report if it were checked first."""
+    bb = bitboard_after(WIN_ON_42[:-1])
+    assert bb.moves == 41
+    assert Solver().solve(bb) == 1
+    assert brute_force(bb) == 1
+
+
+def test_full_board_draw_scores_zero():
+    bb = bitboard_after(DRAW_42)
+    assert Solver().solve(bb) == 0
+    assert brute_force(bb) == 0
+
+
+def test_solve_rejects_finished_positions():
+    bb = bitboard_after(WIN_FIXTURES["vertical_col0"])
+    with pytest.raises(ValueError, match="already won"):
+        Solver().solve(bb)
+
+
+def test_solver_matches_brute_force_on_random_endgames():
+    """The differential test proper, exact score equality (sign agreement
+    would pass a solver with a corrupted magnitude). One solver is shared
+    across every position ON PURPOSE: entries persist across solve() calls,
+    so any stale-entry, key-collision or flag bug that only shows on a warm
+    table shows here; the fresh solver per position is the control."""
+    rng = np.random.default_rng(2)
+    shared = Solver()
+    for stones, n in ((32, 8), (34, 20), (36, 20)):
+        for _ in range(n):
+            bb = random_position(rng, stones)
+            truth = brute_force(bb)
+            assert shared.solve(bb) == truth
+            assert Solver().solve(bb) == truth
+
+
+def test_tiny_table_forces_collisions_without_corrupting_values():
+    """At size 17 nearly every put lands on an occupied slot, so the
+    replace-on-collision path and the stored-key check run constantly; the
+    values must not move."""
+    rng = np.random.default_rng(3)
+    tiny = Solver(tt_size=17)
+    for _ in range(12):
+        bb = random_position(rng, 34)
+        assert tiny.solve(bb) == brute_force(bb)
