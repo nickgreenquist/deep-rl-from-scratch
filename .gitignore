@@ -18,6 +18,10 @@ checkpoints/
 runs/
 wandb/
 
+# Downloaded benchmark data (Pons position sets — repo license is null,
+# so they are fetched by scripts/pons_benchmark.py and never committed)
+data/
+
 # OS / editor
 .DS_Store
 .idea/
