@@ -215,14 +215,47 @@ class Solver:
         self.nodes = 0
 
     def solve(self, bb: Bitboard) -> int:
+        """Pons' chapter-8 driver: iterative narrowing by null-window
+        probes. Mandatory, not an optimization — measured pre-chapter-8,
+        the Begin sets sit at 54 hours to 17 days; this cuts Begin-Easy
+        ~660x (PLAN.md). Each probe `(med, med+1)` is decisive both ways
+        because the search is fail-soft: r <= med means the true value is
+        <= r, r > med means it is >= r, so [lo, hi] shrinks by a tightened
+        bound every iteration until it pinches onto the exact score. The
+        probes share the table, which is why the TT flags are load-bearing
+        (a bound stored as EXACT poisons the next probe — the corruption
+        the null-window consistency test pins).
+
+        `int(x / 2)` and not `x // 2`: the reference C++ truncates toward
+        zero, Python floors, and they differ on negative bounds.
+        """
         if _alignment(bb.current) or _alignment(bb.current ^ bb.mask):
             raise ValueError("position is already won; solve() wants a live position")
-        # Full window: |score| <= 21 by construction (22 - winner's stones,
-        # >= 1 stone). Tighter bounds exist (a win needs 4 stones) but the
-        # chapter-8 driver is where windows earn their keep.
-        return self._negamax(bb, -(CELLS // 2), CELLS // 2)
+        lo = -((CELLS - bb.moves) // 2)
+        hi = (CELLS + 1 - bb.moves) // 2
+        while lo < hi:
+            med = lo + (hi - lo) // 2
+            # Bias the probe toward zero first (most positions are close
+            # to a draw), stepping to the halved bound when it is nearer.
+            if med <= 0 and int(lo / 2) < med:
+                med = int(lo / 2)
+            elif med >= 0 and int(hi / 2) > med:
+                med = int(hi / 2)
+            r = self._negamax(bb, med, med + 1)
+            if r <= med:
+                hi = r
+            else:
+                lo = r
+        return lo
 
     def _negamax(self, bb: Bitboard, alpha: int, beta: int) -> int:
+        # The window must have width: the TT-hit path below returns `value`
+        # whenever a stored bound closes the window, which is only the
+        # right bound DIRECTION if alpha < beta held on entry. A zero-width
+        # call returns bounds facing the wrong way — found by a mutation
+        # that relaxed the cutoff to strict `>` and let child windows
+        # collapse to zero (scripts/mutations/chunk3_solver.py).
+        assert alpha < beta
         self.nodes += 1
         if bb.moves == CELLS:
             return 0  # full board, and the mover's opponent did not win

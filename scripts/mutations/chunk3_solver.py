@@ -72,14 +72,37 @@ MUTATIONS = [
     ("tt-key-check-dropped", SOLVER,
      "        if entry and entry >> 8 == key:",
      "        if entry:"),
+    # Was control C2, reclassified after the chapter-8 driver caught it: a
+    # strict `>` cutoff lets alpha rise to == beta and the next child be
+    # searched with a ZERO-width window, where the TT-hit path returns
+    # bounds facing the wrong way. Equivalent-looking, actually a contract
+    # violation — the alpha < beta assert now makes the catch deterministic.
+    ("strict-cutoff-breaks-window-contract", SOLVER,
+     "            if alpha >= beta:\n                break",
+     "            if alpha > beta:\n                break"),
+    # ------------------------------------------------------ chapter-8 driver
+    ("driver-trusts-fail-high-as-exact", SOLVER,
+     """            if r <= med:
+                hi = r
+            else:
+                lo = r""",
+     """            if r <= med:
+                hi = r
+            else:
+                return r"""),
     # ------------------------------------------------- equivalence CONTROLS
     ("C1-move-order-left-to-right", SOLVER,
      "MOVE_ORDER = (3, 2, 4, 1, 5, 0, 6)",
      "MOVE_ORDER = (0, 1, 2, 3, 4, 5, 6)"),
-    ("C2-strict-cutoff", SOLVER,
-     "            if alpha >= beta:\n                break",
-     "            if alpha > beta:\n                break"),
-    ("C3-tt-size-other-prime", SOLVER,
+    ("C2-tt-size-other-prime", SOLVER,
      "TT_SIZE = 1048573  # prime, so key % size spreads",
      "TT_SIZE = 524287  # prime, so key % size spreads"),
+    # The driver's exit condition is lo == hi exactly: fail-soft results are
+    # always inside the invariant interval, so lo can never overshoot.
+    ("C3-driver-returns-hi", SOLVER,
+     "        return lo",
+     "        return hi"),
+    ("C4-driver-midpoint-closed-form", SOLVER,
+     "            med = lo + (hi - lo) // 2",
+     "            med = (lo + hi) // 2"),
 ]

@@ -224,6 +224,24 @@ def test_narrow_window_searches_do_not_poison_the_table():
         assert poisoned.solve(bb) == value
 
 
+def test_chapter8_driver_matches_plain_full_window_search():
+    """The null-window driver must land on exactly the value a single
+    full-window negamax finds — checked at depths the brute-force oracle
+    cannot reach (the endgame differential already anchors both against
+    brute force where it can). Fresh solver per side so neither search
+    reads the other's table."""
+    rng = np.random.default_rng(6)
+    kept = 0
+    while kept < 6:
+        bb = random_position(rng, int(rng.integers(18, 23)))
+        reference = Solver()
+        value = reference._negamax(bb, -(CELLS // 2), CELLS // 2)
+        if reference.nodes < 2_000:
+            continue
+        kept += 1
+        assert Solver().solve(bb) == value
+
+
 def test_tiny_table_forces_collisions_without_corrupting_values():
     """At size 17 nearly every put lands on an occupied slot, so the
     replace-on-collision path and the stored-key check run constantly; the
