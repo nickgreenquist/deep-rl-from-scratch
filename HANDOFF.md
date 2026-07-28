@@ -1,77 +1,108 @@
-# Handoff — Phase 4 chunk 3: solver, anchors, tournament, Elo
+# Handoff — Phase 4: chunk 3 COMPLETE, chunk 4 next
 
 Instructions to a fresh session of Claude Code after a context clear. Trust
 `PLAN.md` § Phase 4 over anything here if they disagree — it is the locked
-spec and the session log holds every finding. Do not re-litigate locked
+spec and the session log holds every finding. Do not re-litigate settled
 decisions; if one looks wrong, say so and ask.
 
 ## State
-- Clean at `fd7e880`, **10 commits UNPUSHED** (origin is at `9717797`) — ask
-  the maintainer before pushing. **208 tests green.**
-- **Chunks 1 AND 2 are COMPLETE**, including chunk 2's pathfinder and the
-  mechanism diagnostics. The five `2026-07-27` session-log entries in
-  PLAN.md are the record: chunk-1 implementation, chunk-1 gate, chunk-2
-  implementation, chunk-2 pathfinder, mechanism diagnostics.
-- Headline findings you must not rediscover from scratch: the self-play
-  agents are coverage-collapsed (probe arms replay 8–11 distinct games out
-  of 200; critic 10–30× worse one step off its own distribution), the
-  pre-registered vs-random ≥0.95 recovery FAILED (0.87–0.90, declining),
-  entropy collapsed by 2M. All pre-registered escapes — findings, not bugs.
-  Three chunk-4 probe levers are named in falsifiable form in PLAN.md.
+- Clean at `c4464c6`, **fully pushed** (origin in sync). **254 tests green.**
+- **Chunk 3 is COMPLETE** — solver (bitboard + chapter-8 null-window
+  driver), Pons downloader/validator, `AlphaBetaOpponent` anchors
+  (`alphabeta2`/`alphabeta4`), `rl/selfplay/elo.py` (BT-MM + Ford guard +
+  stratified bootstrap + intransitivity detector w/ null band),
+  `play_game` in `opponents.py`, `scripts/tournament.py`. Mutation
+  batteries committed and clean: `chunk3_solver.py` (17/17 real caught,
+  5/5 controls survive), `chunk3_elo.py` (9/9 + 2/2).
+- **Pons validation CLOSED at 4,400/4,400, zero mismatches** (End-Easy,
+  Middle-Easy, Middle-Medium, Begin-Easy full; Begin-Medium 400-position
+  partial). Begin-Medium/Hard are measured-intractable at this solver
+  level — the boundary the spec itself drew; chapters 9–13 are the named
+  lever ONLY if a future phase needs them. Do not reopen.
+- **Both forks are SETTLED and the campaign config is LOCKED:**
+  `gae_lambda` 0.95 (lam1 final 60 Elo behind pool, CIs disjoint) and
+  `kernel_size` 3 (3 seeds/arm: k3 finals {−124.5, −189.8, −131.7} vs k4
+  {−200.8, −171.7, −231.8}; k4's vs-heuristic edge was anchor
+  specialization). The four 2026-07-28 session-log entries are the record.
+- **Seven trained ladders on disk, each with a `tournament.json`**
+  (500 games/pair, B=1000): `runs/connect4_pool_{s0,s1,s2}`,
+  `connect4_pool_k4_{s0,s1,s2}`, `connect4_pool_lam1_s0`. The pool trio
+  IS the pool side of the chunk-4 campaign (locked config, seeds 0/1/2).
+  The **naive arm (`pool_size: 1`) has never been trained** — its 3 seeds
+  are the only campaign training left (`configs/connect4_naive.yaml`,
+  `--seed`/`--run-name` overrides exist).
+- Cross-cutting findings already established (do not rediscover): the
+  cycling detector fires in ALL 7 tournaments (fractions 0.035–0.108 vs
+  null-band tops 0.002–0.013); best rung ≠ final in 4/7 runs (late
+  regression is the norm; k4_s2 −47 Elo from its 1.2M peak); within-arm
+  seed spread ~65 Elo; AlphaStar min-winrate proxy from the tournament
+  counts: pool {0.610, 0.458, 0.609}, k4 {0.481, 0.526, 0.567}, lam1
+  0.487. Chunk-2's coverage collapse / vs-random decline / entropy
+  collapse findings and the three chunk-4 probe levers (entropy floor,
+  PFSP, fixed-opponent mixing) stand as recorded.
 
 ## Read, in order
-1. `CLAUDE.md` (note the command-handover format rule — one command per
-   fenced block, no inline comments, `WANDB_MODE=offline` in run commands).
-2. `PLAN.md` § Phase 4 **in full** — the solver/Elo paragraphs ARE the
-   chunk-3 spec (TT `(value, EXACT|LOWER|UPPER)` flags, Python-int bitboard,
-   chapter-8 null-window mandatory, Pons URLs plain-http into gitignored
-   `data/` never committed, Bradley-Terry by MM with Ford check and
-   stratified bootstrap). Then the five 2026-07-27 session-log entries.
-3. Code: `rl/selfplay/pool.py` (AgentOpponent is the checkpoint→opponent
-   adapter the tournament needs — deepcopy inside the constructor, own
-   `torch.Generator` per instance for matchup replay), `rl/selfplay/
-   opponents.py` (the `OPPONENTS` registry chunk 3 extends with
-   `alphabeta2`/`alphabeta4`), `rl/envs/connect4.py` docstrings,
-   `scripts/score_ladder.py`, `scripts/mutate.py` + `scripts/mutations/
-   chunk2_pool.py` (the battery pattern to repeat for chunk 3).
+1. `CLAUDE.md` — note the handed-over-command format: one command per
+   fenced block, ONE line, no inline comments, wrapped in `<command>` /
+   `</command>` sentinel lines OUTSIDE the fence; `WANDB_MODE=offline` on
+   training commands.
+2. `PLAN.md` § Phase 4: the chunk-4 checkbox, the forgetting-demonstration
+   and solver/metrics paragraphs (they define the Pons agent metrics:
+   value sign accuracy + Brier over decisive positions per set, MAE
+   rejected; policy metrics over the solver-exhausted subset, coverage
+   always reported), and the 2026-07-27/28 session-log entries.
+3. Code: `rl/selfplay/{solver,elo,opponents,pool}.py`,
+   `scripts/{tournament,pons_benchmark,score_ladder,mutate}.py`,
+   `scripts/mutations/chunk3_*.py`.
 
-## Task: chunk 3, per the maintainer-approved file plan
-1. `rl/selfplay/solver.py` — bitboard negamax + alpha-beta (centre-first,
-   bounded TT with flags) PLUS a brute-force no-pruning negamax as the
-   differential oracle; tests cross-check bitboard ↔ `Connect4Board` and
-   solver ↔ brute force on random positions.
-2. Chapter-8 iterative deepening on top; Pons downloader; validation runs
-   (Begin sets ~12 min) go to the maintainer's terminal.
-3. `AlphaBetaOpponent(depth)` with uniform random tie-breaking, registered.
-4. `rl/selfplay/elo.py` — BT-MLE by MM, Ford check before every fit,
-   perfect scorers dropped with floor/ceiling, seeded stratified bootstrap
-   B=1000, iteration-stability test at 200/2k/20k.
-5. `scripts/tournament.py` — ladder + four anchors, first player alternated
-   exactly, both sides stochastic; the ~40-min campaign runs in the
-   maintainer's terminal.
+## Task: chunk 4
+1. **PENDING GO-AHEAD (asked, never answered — ask again before building):**
+   commit the two mechanism diagnostics as tooling, rebuilt from the
+   methods recorded in the 2026-07-27 diagnostics entry:
+   `scripts/coverage_probe.py` (distinct games + mean common prefix vs
+   latest snapshot, random-vs-random control; reuse `play_game`, which
+   may need an optional start-position param) and
+   `scripts/value_mse_probe.py` (value MSE over self-play/random/heuristic
+   state distributions, targets = mean of K=8 mirror-self-play
+   continuations). Then run both on the 7 finals (the confirming-seed
+   "re-log both" note is still open).
+2. Naive arm: 3 training runs (maintainer's terminal, ~3–5 min each),
+   then tournament each ladder (~1 min each, in-session is fine).
+3. Forgetting demonstration per the locked spec: AlphaStar proxy PRIMARY
+   (promote the session-log scratch snippet to committed tooling),
+   regression rate SECONDARY and only against its simulated null band.
+4. Pons agent metrics script (the last instrument): value-head sign
+   accuracy + Brier per set over decisive positions; blunder rate /
+   optimal-move agreement / score regret over the solver-exhausted subset
+   (End/Middle sets; blunder rate needs only child SIGNS so a weak solve
+   suffices there), coverage always reported.
+5. Gitignored `runs/connect4_campaign.sh`, figure, README section.
+   Open decision for the maintainer: probe levers before or as campaign
+   arms.
 
 ## Gotchas not in the plan
 - `deep-rl` conda env only: `/opt/anaconda3/envs/deep-rl/bin/pytest tests/`.
-- Ladders to feed the tournament are ON DISK: `runs/connect4_pool_s0`,
-  `runs/connect4_pool_lam1_s0`, `runs/connect4_pool_k4_s0` — 10 rungs each
-  plus `history.csv` and `ladder_scores.json`.
-- The mutation battery temporarily mutates tracked source: never run it
-  while the maintainer might be launching a run, or the run stamps
-  `git_dirty: true` (the launch blocker).
-- The two mechanism-diagnostic scripts (off-distribution value MSE,
-  distinct-game coverage) were session scratch and are GONE; their methods
-  and controls are recorded in the diagnostics session-log entry. The
-  kernel-fork confirmation seeds (k3 vs k4, 2 seeds, before chunk 4 locks)
-  must re-log both — rebuild from the recorded method (~30 lines each) or
-  fold them into committed tooling then.
-- `open_spiel` stays dev-only (`pyspiel.load_game`, never
-  `open_spiel.python.*`); the AST pin test enforces it.
-- Solver perf notes are already measured (PLAN.md): Python-int bitboard
-  894k nodes/s, NumPy is the SLOWEST representation; never subsample Pons
-  sets to estimate runtime.
+- **Division of labor (clarified this session):** training and anything
+  multi-minute goes to the maintainer's terminal; the ~1-minute class
+  (tournaments, probes) may run in-session — it was measured at full
+  speed there. When in doubt, hand it over.
+- Never edit the tree (even uncommitted) while the maintainer may be
+  LAUNCHING a training run — launches stamp `git_dirty`. Never run
+  mutation batteries while any maintainer process might import mutated
+  source. Coordinate via the conversation.
+- zsh traps in handed-over commands: no `echo =====` (equals expansion),
+  no inline `#`, no multi-line blocks.
+- `AgentOpponent` freeze-at-install contract: whoever installs calls
+  `freeze()` (tournament.py does; copy that pattern).
+- Tournament JSONs contain full pairwise counts — the AlphaStar proxy and
+  any future pairwise analysis come free from them; `best_checkpoint.pt`
+  is excluded from tournaments by design (selection bias).
+- The mutation batteries' `old` strings match current source exactly; a
+  refactor that breaks one is a prompt to update the spec, not delete it.
 
 ## First actions
-1. Confirm chunk 3 step 1 is the scope for this session.
+1. Confirm with the maintainer which chunk-4 item to start with (the
+   diagnostics go-ahead is the natural first ask).
 2. Read the docs and code above.
 3. State which files you'll create/change and why; wait for a go-ahead.
 4. Small commits, pytest green per step, mutation-test each guard.
