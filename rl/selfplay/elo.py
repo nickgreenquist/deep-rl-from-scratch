@@ -192,3 +192,65 @@ def bootstrap(counts, anchor: str, B: int = 1000, seed: int = 0,
         for name, values in samples.items()
     }
     return BootstrapResult(intervals, {n: len(v) for n, v in samples.items()}, failed)
+
+
+def _majority_sign(counts, players: list[str]) -> np.ndarray:
+    """sign(S_ij - S_ji) per pair. Draws cancel out of the difference, so
+    only decisive games move a pairwise direction."""
+    S = _score_matrix(counts, players)
+    return np.sign(S - S.T)
+
+
+def intransitive_triples(counts) -> "tuple[float, int]":
+    """Fraction of player triples whose pairwise majority directions form
+    a cycle (i beats j beats k beats i), over all C(n, 3) triples. A tied
+    pair (equal scores) breaks any would-be cycle and counts transitive.
+    The BARE fraction is not evidence of cycling — sampling noise on an
+    acyclic ground truth yields 7.2-7.7% spurious cycles at the ~40-Elo
+    ladder spans late training produces (PLAN.md) — which is why
+    `cycle_null_band` exists and the two are only ever reported together.
+    """
+    players = sorted({name for pair in counts for name in pair})
+    sign = _majority_sign(counts, players)
+    n = len(players)
+    cycles = total = 0
+    for i in range(n):
+        for j in range(i + 1, n):
+            for k in range(j + 1, n):
+                total += 1
+                if (sign[i, j] == sign[j, k] == sign[k, i] != 0):
+                    cycles += 1
+    return (cycles / total if total else 0.0), total
+
+
+def cycle_null_band(counts, ratings: "dict[str, float]", B: int = 200,
+                    seed: int = 0) -> "tuple[float, float]":
+    """2.5/97.5 percentile band of the triple fraction under the ACYCLIC
+    null: tournaments resimulated from the fitted (transitive by
+    construction) BT ratings, each pair getting binomial wins at its
+    BT-implied probability over its actual DECISIVE game count — draws do
+    not move a majority sign, so simulating them would only dilute the
+    noise the band is supposed to capture. Only rated players enter the
+    band (a floored/ceilinged player has no rating to simulate from); the
+    caller compares against the triple fraction of the same subset."""
+    players = sorted(ratings)
+    index = {name: i for i, name in enumerate(players)}
+    decisive = np.zeros((len(players), len(players)))
+    for (first, second), (first_wins, _, second_wins) in counts.items():
+        if first in index and second in index:
+            i, j = index[first], index[second]
+            decisive[i, j] += first_wins + second_wins
+            decisive[j, i] += first_wins + second_wins
+    rng = np.random.default_rng(seed)
+    elo = np.array([ratings[name] for name in players])
+    p_win = 1.0 / (1.0 + 10.0 ** ((elo[None, :] - elo[:, None]) / 400.0))
+    fractions = []
+    for _ in range(B):
+        sim = {}
+        for i in range(len(players)):
+            for j in range(i + 1, len(players)):
+                n_games = int(decisive[i, j])
+                wins = int(rng.binomial(n_games, p_win[i, j])) if n_games else 0
+                sim[(players[i], players[j])] = (wins, 0, n_games - wins)
+        fractions.append(intransitive_triples(sim)[0])
+    return float(np.percentile(fractions, 2.5)), float(np.percentile(fractions, 97.5))

@@ -46,6 +46,13 @@ MUTATIONS = [
     ("bootstrap-failures-uncounted", ELO,
      "        except ValueError:\n            failed += 1\n            continue",
      "        except ValueError:\n            continue"),
+    # -------------------------------------------------------- intransitivity
+    ("cycle-needs-only-two-aligned-edges", ELO,
+     "                if (sign[i, j] == sign[j, k] == sign[k, i] != 0):",
+     "                if (sign[i, j] == sign[j, k] != 0):"),
+    ("tied-edges-complete-cycles", ELO,
+     "                if (sign[i, j] == sign[j, k] == sign[k, i] != 0):",
+     "                if (sign[i, j] == sign[j, k] == sign[k, i]):"),
     # ------------------------------------------------- equivalence CONTROLS
     # MM is scale-invariant and ratings are anchor-relative: any per-
     # iteration rescaling constant gives identical rating differences.

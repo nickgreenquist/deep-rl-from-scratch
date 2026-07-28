@@ -20,8 +20,10 @@ import pytest
 from rl.selfplay.elo import (
     ELO_PER_LOG,
     bootstrap,
+    cycle_null_band,
     fit_bt,
     ford_connected,
+    intransitive_triples,
     rate,
 )
 
@@ -179,3 +181,39 @@ def test_bootstrap_flags_failed_resamples_instead_of_fitting_them():
     anchored_at_c = bootstrap(counts, anchor="c", B=60, seed=5, iterations=500)
     assert anchored_at_c.failed > 0
     assert anchored_at_c.rated_in["c"] == 60 - anchored_at_c.failed
+
+
+def test_intransitive_triples_on_known_structures():
+    """A swept hierarchy has zero cycles; rock-paper-scissors is one cycle
+    out of one triple; an all-draws triangle has no majority directions at
+    all, and a tied edge must break a cycle rather than complete one."""
+    ordered = {("a", "b"): (10, 0, 0), ("a", "c"): (10, 0, 0), ("b", "c"): (10, 0, 0)}
+    assert intransitive_triples(ordered) == (0.0, 1)
+    rps = {("a", "b"): (10, 0, 0), ("b", "c"): (10, 0, 0), ("c", "a"): (10, 0, 0)}
+    assert intransitive_triples(rps) == (1.0, 1)
+    all_draws = {("a", "b"): (0, 10, 0), ("b", "c"): (0, 10, 0), ("c", "a"): (0, 10, 0)}
+    assert intransitive_triples(all_draws) == (0.0, 1)
+
+
+def test_cycle_null_band_tracks_ladder_spacing():
+    """Wide gaps leave no room for spurious cycles (the null band pins to
+    zero); a ladder at ~40-Elo spacing over ~100 games/pair — the regime
+    the spec's 7.2-7.7% spurious-cycle figure lives in — has a nonzero
+    band even though the generator is perfectly acyclic, which is exactly
+    why the bare fraction is never reported alone."""
+    games = {("%s" % a, "%s" % b): (50, 0, 50) for a in "abcde" for b in "abcde" if a < b}
+    wide = {name: 600.0 * i for i, name in enumerate("abcde")}
+    close = {name: 40.0 * i for i, name in enumerate("abcde")}
+    assert cycle_null_band(games, wide, B=100, seed=0) == (0.0, 0.0)
+    lo, hi = cycle_null_band(games, close, B=100, seed=0)
+    assert hi > 0.0
+
+
+def test_empirical_fraction_of_a_bt_sample_sits_in_its_null_band():
+    rng = np.random.default_rng(4)
+    strengths = {f"p{k}": 1.26**k for k in range(5)}  # ~40 Elo apart
+    counts = bt_counts(rng, strengths, games=500)
+    ratings = rate(counts, anchor="p0").ratings
+    fraction, _ = intransitive_triples(counts)
+    lo, hi = cycle_null_band(counts, ratings, B=200, seed=1)
+    assert lo <= fraction <= hi
