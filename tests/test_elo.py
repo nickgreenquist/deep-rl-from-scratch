@@ -19,12 +19,15 @@ import pytest
 
 from rl.selfplay.elo import (
     ELO_PER_LOG,
+    alphastar_proxy,
     bootstrap,
     cycle_null_band,
     fit_bt,
     ford_connected,
     intransitive_triples,
     rate,
+    regression_null_band,
+    regression_rate,
 )
 
 
@@ -217,3 +220,63 @@ def test_empirical_fraction_of_a_bt_sample_sits_in_its_null_band():
     fraction, _ = intransitive_triples(counts)
     lo, hi = cycle_null_band(counts, ratings, B=200, seed=1)
     assert lo <= fraction <= hi
+
+
+def test_alphastar_proxy_takes_the_min_not_the_mean():
+    """r2 beats the oldest rung 0.9 but loses 0.3 to the middle one — the
+    forgetting signature. The min reports 0.3; a mean over earlier selves
+    would report 0.6 and average the signature away."""
+    counts = {
+        ("r1", "r0"): (40, 0, 10), ("r0", "r1"): (10, 0, 40),
+        ("r2", "r0"): (45, 0, 5), ("r0", "r2"): (5, 0, 45),
+        ("r2", "r1"): (15, 0, 35), ("r1", "r2"): (35, 0, 15),
+    }
+    mean, mins = alphastar_proxy(counts, ["r0", "r1", "r2"])
+    assert mins == pytest.approx([0.8, 0.3])
+    assert mean == pytest.approx(0.55)
+
+
+def test_alphastar_proxy_draws_count_half():
+    """30/40/30 one colour only: score (30 + 20)/100 = 0.5 exactly.
+    Dropping the draw term from the numerator would read 0.3."""
+    mean, mins = alphastar_proxy({("r1", "r0"): (30, 40, 30)}, ["r0", "r1"])
+    assert mins == pytest.approx([0.5])
+    assert mean == pytest.approx(0.5)
+
+
+def test_regression_rate_counts_majority_losses_only():
+    """Three pairs: one exact tie (no regression), one majority loss to an
+    earlier self (regression), one majority win. Rate = 1/3."""
+    counts = {
+        ("r1", "r0"): (25, 0, 25),   # tie
+        ("r2", "r0"): (20, 0, 30),   # the later rung loses the majority
+        ("r2", "r1"): (30, 0, 20),
+    }
+    assert regression_rate(counts, ["r0", "r1", "r2"]) == pytest.approx(1 / 3)
+
+
+def test_regression_null_band_sorts_ratings_into_the_monotone_null():
+    """The null's content is the monotone REARRANGEMENT: which rung holds
+    which rating must not matter, only the multiset — so a run whose fitted
+    ladder dips (genuine forgetting) is banded against the monotone learner
+    it could have been, not against its own dip."""
+    counts = {(f"r{i}", f"r{j}"): (250, 0, 250) for i in range(4) for j in range(i)}
+    rungs = [f"r{i}" for i in range(4)]
+    dipped = {"r0": 0.0, "r1": 300.0, "r2": -200.0, "r3": 150.0}
+    ordered = {"r0": -200.0, "r1": 0.0, "r2": 150.0, "r3": 300.0}
+    assert (regression_null_band(counts, dipped, rungs, B=100, seed=0)
+            == regression_null_band(counts, ordered, rungs, B=100, seed=0))
+
+
+def test_regression_null_band_semantics_on_flat_and_separated_ladders():
+    """A well-separated monotone ladder leaves noise no room: the band
+    pins to zero. A flat ladder (a run that never learns) makes every
+    pair a coin flip, so ~50% regression sits INSIDE the band — the case
+    the bare rate misreads as the worst forgetter (PLAN.md 47.8%)."""
+    rungs = [f"r{i}" for i in range(6)]
+    counts = {(f"r{i}", f"r{j}"): (250, 0, 250) for i in range(6) for j in range(i)}
+    separated = {name: 400.0 * i for i, name in enumerate(rungs)}
+    assert regression_null_band(counts, separated, rungs, B=100, seed=0) == (0.0, 0.0)
+    flat = {name: 0.0 for name in rungs}
+    lo, hi = regression_null_band(counts, flat, rungs, B=100, seed=0)
+    assert lo < 0.5 < hi

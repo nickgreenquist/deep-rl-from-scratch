@@ -223,6 +223,82 @@ def intransitive_triples(counts) -> "tuple[float, int]":
     return (cycles / total if total else 0.0), total
 
 
+def _pooled_winrate(counts, a: str, b: str) -> float:
+    """a's score against b, both colours pooled, draws 0.5 — the same
+    convention as `_score_matrix`, for a single pair addressed by name."""
+    a_wins, draws_ab, a_losses = counts.get((a, b), (0, 0, 0))
+    b_wins, draws_ba, b_losses = counts.get((b, a), (0, 0, 0))
+    games = a_wins + draws_ab + a_losses + b_wins + draws_ba + b_losses
+    return (a_wins + b_losses + 0.5 * (draws_ab + draws_ba)) / games
+
+
+def alphastar_proxy(counts, rungs: "list[str]") -> "tuple[float, list[float]]":
+    """AlphaStar's published forgetting proxy (Nature 2019 Fig. 3C/D):
+    each rung's MINIMUM pooled win rate against any earlier rung,
+    averaged over rungs. `rungs` must be in training order — the
+    "earlier" in min_{j<i} is temporal, and a mis-ordered list silently
+    measures a different quantity. The min, not a mean, is the point:
+    forgetting is losing to SOME earlier self while beating the rest,
+    and a mean over earlier selves averages the signature away.
+
+    This is the PRIMARY forgetting measure (locked spec): unlike the
+    regression rate it does not read a never-learns run as the worst
+    forgetter, because a flat ladder's minima sit near 0.5, not 0.
+    Returns (mean, per-rung minima for rungs[1:]).
+    """
+    mins = [
+        min(_pooled_winrate(counts, rungs[i], rungs[j]) for j in range(i))
+        for i in range(1, len(rungs))
+    ]
+    return float(np.mean(mins)), mins
+
+
+def regression_rate(counts, rungs: "list[str]") -> float:
+    """Fraction of ordered rung pairs (earlier, later) where the later
+    checkpoint loses the pooled pairwise majority to the earlier one
+    (score < 0.5; an exact tie is no regression). SECONDARY measure,
+    meaningless bare: a run that never learns reads ~48% because every
+    pair is a coin flip — worse than genuine forgetting's ~14% (PLAN.md)
+    — so it is only ever reported against `regression_null_band`."""
+    pairs = [(i, j) for i in range(1, len(rungs)) for j in range(i)]
+    regressed = sum(
+        _pooled_winrate(counts, rungs[i], rungs[j]) < 0.5 for i, j in pairs
+    )
+    return regressed / len(pairs)
+
+
+def regression_null_band(counts, ratings: "dict[str, float]",
+                         rungs: "list[str]", B: int = 200,
+                         seed: int = 0) -> "tuple[float, float]":
+    """2.5/97.5 percentile band of `regression_rate` under the
+    ZERO-FORGETTING null: the run's own fitted rung ratings reassigned to
+    the rungs in ascending order over training steps — the same strength
+    multiset, monotone by construction — then every rung pair resimulated
+    as binomial wins at the BT-implied probability over its actual
+    DECISIVE game count (draws cannot move a pairwise majority, exactly
+    as in `cycle_null_band`). The rearrangement is the null's content: a
+    never-learns run has a flat ladder whose rearrangement is equally
+    flat, so its ~48% observed rate lands INSIDE the band and is
+    correctly not read as forgetting, while a genuinely regressing ladder
+    is compared against the monotone learner it could have been."""
+    elo = np.sort(np.array([ratings[r] for r in rungs]))
+    pairs = [(i, j) for i in range(1, len(rungs)) for j in range(i)]
+    decisive = {}
+    for i, j in pairs:
+        fw1, _, sw1 = counts.get((rungs[i], rungs[j]), (0, 0, 0))
+        fw2, _, sw2 = counts.get((rungs[j], rungs[i]), (0, 0, 0))
+        decisive[(i, j)] = fw1 + sw1 + fw2 + sw2
+    rng = np.random.default_rng(seed)
+    fractions = []
+    for _ in range(B):
+        regressed = sum(
+            int(rng.binomial(n, 1.0 / (1.0 + 10.0 ** ((elo[j] - elo[i]) / 400.0)))) * 2 < n
+            for (i, j), n in decisive.items()
+        )
+        fractions.append(regressed / len(pairs))
+    return float(np.percentile(fractions, 2.5)), float(np.percentile(fractions, 97.5))
+
+
 def cycle_null_band(counts, ratings: "dict[str, float]", B: int = 200,
                     seed: int = 0) -> "tuple[float, float]":
     """2.5/97.5 percentile band of the triple fraction under the ACYCLIC
