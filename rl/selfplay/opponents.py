@@ -181,6 +181,32 @@ class AlphaBetaOpponent(Opponent):
         return int(rng.choice([c for c, s in sorted(scores.items()) if s == best]))
 
 
+def play_game(first: Opponent, second: Opponent, rng: np.random.Generator) -> int:
+    """One game between two opponents on a raw board, no env: +1 if
+    `first` (the first player) wins, 0 a draw, -1 if `second` wins.
+
+    Each side is queried exactly as the env queries its opponent —
+    `select()` once at the start (the per-episode swap boundary), then
+    `move()` on the board canonicalized to ITS perspective, which the
+    canonical board gives for free since `planes()` always renders the
+    mover's view. Win is checked before full: the 42nd disc can complete
+    a line here just as it can in `Connect4Env.step()`. Committed as the
+    tournament's game runner so the chunk-4 coverage diagnostic can reuse
+    it rather than being rebuilt from session scratch.
+    """
+    players = (first.select(rng), second.select(rng))
+    board = Connect4Board()
+    mover = 0
+    while True:
+        col = players[mover].move(board.planes(), board.legal_mask(), rng)
+        won = board.drop(int(col))
+        if won:
+            return 1 if mover == 0 else -1
+        if board.full():
+            return 0
+        mover = 1 - mover
+
+
 # Name -> factory, so a config can say `opponent: heuristic`. The alpha-beta
 # anchors are fixed at depths 2 and 4 (the tournament's ladder anchors);
 # chunk 2's pool is passed as an object, not a name.

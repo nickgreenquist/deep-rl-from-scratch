@@ -115,6 +115,21 @@ MUTATIONS = [
     ("ab-win-score-off-by-one", OPP,
      "            return (CELLS + 1 - bb.moves) // 2",
      "            return (CELLS - bb.moves) // 2"),
+    # ------------------------------------------------------------ play_game
+    ("game-winner-sign-flipped", OPP,
+     "            return 1 if mover == 0 else -1",
+     "            return -1 if mover == 0 else 1"),
+    ("game-full-checked-before-win", OPP,
+     """        won = board.drop(int(col))
+        if won:
+            return 1 if mover == 0 else -1
+        if board.full():
+            return 0""",
+     """        won = board.drop(int(col))
+        if board.full():
+            return 0
+        if won:
+            return 1 if mover == 0 else -1"""),
     # ------------------------------------------------- equivalence CONTROLS
     ("C1-move-order-left-to-right", SOLVER,
      "MOVE_ORDER = (3, 2, 4, 1, 5, 0, 6)",

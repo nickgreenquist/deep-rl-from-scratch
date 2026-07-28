@@ -23,9 +23,16 @@ from rl.selfplay.opponents import (
     AlphaBetaOpponent,
     alphabeta_move_scores,
     make_opponent,
+    play_game,
 )
 from rl.selfplay.solver import Bitboard, Solver, brute_force
-from tests.test_connect4 import DRAW_42, WIN_FIXTURES, WIN_ON_42, play
+from tests.test_connect4 import (
+    DRAW_42,
+    WIN_FIXTURES,
+    WIN_ON_42,
+    ScriptedOpponent,
+    play,
+)
 
 # ---------------------------------------------------------------- bitboard
 
@@ -338,3 +345,49 @@ def test_registry_resolves_the_alphabeta_anchors():
         opponent = make_opponent(name)
         assert isinstance(opponent, AlphaBetaOpponent)
         assert opponent.depth == depth
+
+
+# --------------------------------------------------------------- play_game
+
+
+def test_play_game_attributes_the_win_to_the_right_seat():
+    """Fixture games driven from both seats: vertical_col0 has an odd ply
+    count so the first seat wins; prepending a wasted move hands the same
+    win to the second seat; WIN_ON_42 ends on the 42nd disc (even ply,
+    second seat) and pins win-before-full inside the runner too."""
+    rng = np.random.default_rng(0)
+    cols = WIN_FIXTURES["vertical_col0"]
+    assert play_game(ScriptedOpponent(cols[0::2]), ScriptedOpponent(cols[1::2]), rng) == 1
+    shifted = [6] + cols
+    assert play_game(
+        ScriptedOpponent(shifted[0::2]), ScriptedOpponent(shifted[1::2]), rng
+    ) == -1
+    assert play_game(
+        ScriptedOpponent(WIN_ON_42[0::2]), ScriptedOpponent(WIN_ON_42[1::2]), rng
+    ) == -1
+    assert play_game(
+        ScriptedOpponent(DRAW_42[0::2]), ScriptedOpponent(DRAW_42[1::2]), rng
+    ) == 0
+
+
+def test_play_game_select_rewinds_and_objects_are_reusable():
+    """The runner calls select() at game start — the per-episode hook — so
+    the SAME scripted objects must replay cleanly across games, exactly as
+    a pool member is reused across episodes."""
+    first = ScriptedOpponent(DRAW_42[0::2])
+    second = ScriptedOpponent(DRAW_42[1::2])
+    for _ in range(3):
+        assert play_game(first, second, np.random.default_rng(0)) == 0
+
+
+def test_play_game_is_deterministic_given_the_rng():
+    def outcomes():
+        rng = np.random.default_rng(3)
+        return [
+            play_game(make_opponent("heuristic"), make_opponent("alphabeta2"), rng)
+            for _ in range(10)
+        ]
+
+    first, again = outcomes(), outcomes()
+    assert first == again
+    assert len(set(first)) > 1  # and the games are not all the same result
