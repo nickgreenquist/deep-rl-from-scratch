@@ -19,8 +19,13 @@ import numpy as np
 import pytest
 
 from rl.envs.connect4 import CELLS, COLS, Connect4Board
+from rl.selfplay.opponents import (
+    AlphaBetaOpponent,
+    alphabeta_move_scores,
+    make_opponent,
+)
 from rl.selfplay.solver import Bitboard, Solver, brute_force
-from tests.test_connect4 import DRAW_42, WIN_FIXTURES, WIN_ON_42
+from tests.test_connect4 import DRAW_42, WIN_FIXTURES, WIN_ON_42, play
 
 # ---------------------------------------------------------------- bitboard
 
@@ -251,3 +256,85 @@ def test_tiny_table_forces_collisions_without_corrupting_values():
     for _ in range(12):
         bb = random_position(rng, 34)
         assert tiny.solve(bb) == brute_force(bb)
+
+
+# ----------------------------------------------------- alpha-beta opponent
+
+
+def ask_opponent(opponent, cols, draws=20, seed=0):
+    """Play `cols`, then collect `draws` seeded move() choices from the
+    resulting position (the mover is whoever is to move after `cols`)."""
+    board, _ = play(cols)
+    rng = np.random.default_rng(seed)
+    return [
+        opponent.move(board.planes(), board.legal_mask(), rng) for _ in range(draws)
+    ]
+
+
+def test_alphabeta_wins_rather_than_blocks():
+    """After [0,1,0,1,0,1] the mover has three in column 0 AND faces three
+    in column 1: the win outscores the block, so the tie set is a single
+    column and every draw picks it."""
+    assert set(ask_opponent(AlphaBetaOpponent(2), [0, 1, 0, 1, 0, 1])) == {0}
+
+
+def test_alphabeta_blocks_a_loss_it_can_see():
+    """After [0,1,0,1,0] the mover has no win and the opponent has three in
+    column 0: at depth 2 every non-blocking move loses to the win scan one
+    ply down, so column 0 is the unique argmax."""
+    assert set(ask_opponent(AlphaBetaOpponent(2), [0, 1, 0, 1, 0])) == {0}
+
+
+def test_alphabeta4_sees_the_double_threat_alphabeta2_cannot():
+    """After [1,1,2,2] playing column 3 creates the 0/4 double threat and
+    forces a win on ply 3 — inside depth 4's horizon, beyond depth 2's.
+    So alphabeta4 plays column 3 every time, while alphabeta2 scores the
+    whole row of moves 0 and spreads over ties."""
+    bb = Bitboard()
+    for col in [1, 1, 2, 2]:
+        bb = bb.play(col)
+    scores2 = alphabeta_move_scores(bb, 2)
+    scores4 = alphabeta_move_scores(bb, 4)
+    assert set(scores2.values()) == {0}
+    assert scores4[3] > 0
+    assert [c for c, s in scores4.items() if s == max(scores4.values())] == [3]
+    assert set(ask_opponent(AlphaBetaOpponent(4), [1, 1, 2, 2])) == {3}
+    assert len(set(ask_opponent(AlphaBetaOpponent(2), [1, 1, 2, 2], draws=50))) > 1
+
+
+def test_alphabeta_tie_break_is_uniform_and_seeded():
+    """On the empty board at depth 2 all seven moves are true ties: the
+    tie-break must reach every column (the 89/100-vs-2/100 eval-diversity
+    property rides on this) and must replay exactly under the same seed."""
+    board = Connect4Board()
+    opponent = AlphaBetaOpponent(2)
+    rng = np.random.default_rng(7)
+    draws = [opponent.move(board.planes(), board.legal_mask(), rng) for _ in range(300)]
+    assert set(draws) == set(range(COLS))
+    rng_a, rng_b = np.random.default_rng(8), np.random.default_rng(8)
+    assert [opponent.move(board.planes(), board.legal_mask(), rng_a) for _ in range(30)] \
+        == [opponent.move(board.planes(), board.legal_mask(), rng_b) for _ in range(30)]
+
+
+def test_alphabeta_full_depth_matches_the_exact_solver():
+    """With depth >= the moves remaining the horizon never truncates, so
+    the depth-limited scores must equal exact per-move solver values —
+    a differential between the two search implementations."""
+    rng = np.random.default_rng(9)
+    for _ in range(10):
+        bb = random_position(rng, 34)
+        remaining = CELLS - bb.moves
+        scores = alphabeta_move_scores(bb, remaining)
+        for col, score in scores.items():
+            if bb.is_winning_move(col):
+                exact = (CELLS + 1 - bb.moves) // 2
+            else:
+                exact = -Solver().solve(bb.play(col))
+            assert score == exact, f"col {col}: limited {score} != exact {exact}"
+
+
+def test_registry_resolves_the_alphabeta_anchors():
+    for name, depth in (("alphabeta2", 2), ("alphabeta4", 4)):
+        opponent = make_opponent(name)
+        assert isinstance(opponent, AlphaBetaOpponent)
+        assert opponent.depth == depth

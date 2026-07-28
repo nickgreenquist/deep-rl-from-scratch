@@ -22,6 +22,7 @@ update the spec, not to delete the mutation.
 TESTS = ["tests/test_solver.py"]
 
 SOLVER = "rl/selfplay/solver.py"
+OPP = "rl/selfplay/opponents.py"
 
 MUTATIONS = [
     # ------------------------------------------------------------- bitboard
@@ -90,6 +91,30 @@ MUTATIONS = [
                 hi = r
             else:
                 return r"""),
+    # ---------------------------------------------------- alpha-beta anchor
+    ("ab-tie-break-takes-first", OPP,
+     "return int(rng.choice([c for c, s in sorted(scores.items()) if s == best]))",
+     "return int([c for c, s in sorted(scores.items()) if s == best][0])"),
+    # The win-scan-before-horizon ordering is what gives depth d vision of
+    # plies 1..d; swapping them silently turns alphabeta2 into alphabeta1.
+    ("ab-horizon-before-win-scan", OPP,
+     """    if bb.moves == CELLS:
+        return 0
+    for col in MOVE_ORDER:
+        if bb.can_play(col) and bb.is_winning_move(col):
+            return (CELLS + 1 - bb.moves) // 2
+    if depth <= 1:
+        return 0""",
+     """    if bb.moves == CELLS:
+        return 0
+    if depth <= 1:
+        return 0
+    for col in MOVE_ORDER:
+        if bb.can_play(col) and bb.is_winning_move(col):
+            return (CELLS + 1 - bb.moves) // 2"""),
+    ("ab-win-score-off-by-one", OPP,
+     "            return (CELLS + 1 - bb.moves) // 2",
+     "            return (CELLS - bb.moves) // 2"),
     # ------------------------------------------------- equivalence CONTROLS
     ("C1-move-order-left-to-right", SOLVER,
      "MOVE_ORDER = (3, 2, 4, 1, 5, 0, 6)",
@@ -105,4 +130,11 @@ MUTATIONS = [
     ("C4-driver-midpoint-closed-form", SOLVER,
      "            med = lo + (hi - lo) // 2",
      "            med = (lo + hi) // 2"),
+    # Same uniform draw through a different generator method; tests must
+    # assert distributional properties, never the exact consumption of the
+    # rng stream.
+    ("C5-ab-tie-break-by-integers", OPP,
+     "return int(rng.choice([c for c, s in sorted(scores.items()) if s == best]))",
+     "ties = [c for c, s in sorted(scores.items()) if s == best]\n"
+     "        return int(ties[int(rng.integers(len(ties)))])"),
 ]
