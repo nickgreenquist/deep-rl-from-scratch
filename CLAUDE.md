@@ -12,7 +12,7 @@ From-scratch deep RL in PyTorch, built as a portfolio piece over multiple months
 - **Plan before editing.** State which files you'll create/change and why; wait for a go-ahead. Keep diffs clean and reviewable.
 - **Small, single-purpose commits.** End every session at a green, committable state.
 - **Minimal dependencies.** Stdlib where possible; config is a dataclass + YAML, no experiment frameworks. Pin versions in `pyproject.toml`.
-- **CPU by default.** A device override flag exists, but do not rely on MPS — it's flaky for this workload. GPU appears only at the capstone (rented cloud instance).
+- **CPU by default.** A device override flag exists, but do not rely on MPS — it's flaky for this workload. No phase assumes a GPU: capstone online self-play is expected CPU/core-bound (see PLAN.md's Phase 5 hardware note, revised 2026-07-28); a rented cloud GPU enters only for an offline supervised arm (the BC diagnostic) or the Procgen fallback.
 - **This repo may go public.** Keep personal details (employer, etc.) out of committed files.
 
 ## Development environment

@@ -37,7 +37,7 @@ python -m rl.train --config configs/<run>.yaml
 - **One harness.** Shared seeding, logging, evaluation, and checkpointing, with locked metric names (`rollout/episode_return`, `eval/return_mean`, …) so learning curves compare directly across algorithms.
 - **Both action spaces are first-class.** Nothing in shared code assumes discrete actions.
 - **Reproducible evaluation:** fixed eval seeds, deterministic policy, N episodes, mean ± std.
-- **Minimal dependencies**, pinned. CPU by default; GPU only enters at the capstone.
+- **Minimal dependencies**, pinned. CPU by default — including the capstone's online self-play; a GPU enters only for offline supervised arms if adopted.
 
 ## Status
 
