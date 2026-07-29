@@ -47,7 +47,7 @@ python -m rl.train --config configs/<run>.yaml
 | 1 | DQN (replay buffer, target network, ε-greedy; Double/Dueling/n-step as toggles) | done — reproduces the MinAtar paper's DQN on all 5 games (see Results); solves CartPole/LunarLander at peak |
 | 2 | PPO (GAE, clipped objective, entropy bonus, vectorized rollouts) | **done, both tracks** — beats DQN on 3 of 5 MinAtar games; reproduces the reference on MuJoCo locomotion (see Results) |
 | 3 | SAC (twin critics, reparameterized actor, auto-tuned entropy temperature) | **done** — beats PPO on all three MuJoCo envs per sample and loses to it per minute; validated against published SAC (see Results) |
-| 4 | Connect 4 self-play on-ramp: opponent pool, checkpoint Elo harness | planned |
+| 4 | Connect 4 self-play on-ramp: opponent pool, checkpoint Elo harness | **done** — naive self-play forgets (no proxy overlap vs the pool arm), measured on an exact-oracle instrument stack (see Results) |
 | 5 | Capstone: Pokémon Showdown Gen 1 via PPO + self-play | planned |
 
 ## Results — Phase 1: DQN on MinAtar
@@ -409,6 +409,113 @@ Caveats stated rather than buried:
   supports — but "SAC beats PPO" here means the recipes as published, not the
   objectives in isolation. The architecture arm quantifies one of those
   differences; the PPO-raw control quantifies another.
+
+## Results — Phase 4: self-play on Connect 4 (the capstone on-ramp)
+
+![Pool vs naive self-play on Connect 4: per-seed checkpoint-ladder Elo for both arms, and the AlphaStar min-winrate forgetting proxy for every run](assets/connect4_forgetting.png)
+
+Self-play is the one genuinely new *mechanism* the Pokémon capstone needs, so
+it gets its own phase on an environment where a 2M-step run takes ~5 minutes
+and ground truth exists. The learner trains only against frozen snapshots of
+itself held in an opponent pool (20 deep, strided retention so the step-0
+snapshot anchors the span, 80/20 latest/historical draw); the **naive arm is a
+one-key config diff** — `pool_size: 1`, a lagged copy of the learner, which is
+what the self-play literature means by naive. Deliberately **PPO-only, no
+MCTS**: tree search needs a forward model, and Pokémon Showdown provides none.
+A mediocre agent was pre-registered as success; the deliverables are the loop
+and the instruments.
+
+**There is no published PPO-self-play-on-Connect-4 result to grade against**,
+so unlike Phases 1–3 correctness comes from exact oracles instead of curves:
+the board is differential-tested against `open_spiel`, and a from-scratch
+negamax solver (bitboard, flagged transposition table, Pons' null-window
+deepening) is validated against a brute-force reference and **4,400/4,400
+externally labelled positions** (Pascal Pons' benchmark sets, zero
+mismatches). Strength is measured by round-robin tournament — Bradley–Terry
+ratings by MM with a Ford-condition guard, a seeded stratified bootstrap, and
+an intransitivity detector read only against its simulated acyclic null band —
+plus game-theoretic policy metrics (optimal-move agreement, blunder rate,
+score regret) computed from exact child solves.
+
+**The headline: naive self-play forgets, the pool largely prevents it.**
+AlphaStar's published proxy (each checkpoint's worst win rate against any
+earlier self, averaged) separates the arms with **no overlap** — and the
+secondary measure agrees from an independent angle:
+
+| Arm (3 seeds) | Final Elo (alphabeta2 = 0) | AlphaStar proxy | Regression rate vs zero-forgetting null |
+|---|---|---|---|
+| Pool (20 snapshots) | −124.5 / −189.8 / −131.7 | **0.610 / 0.458 / 0.609** | marginal / above / inside |
+| Naive (pool of 1) | −223.9 / −175.1 / −217.0 | **0.309 / 0.392 / 0.250** | all 3–5× above |
+
+The naive tails are catastrophic in the AlphaStar sense: one checkpoint wins
+**1.6%** of games against an earlier version of itself. Huang & Lee's
+published 15.4% forgetting in competitive Pokémon (IEEE CoG 2019 §V-C) is
+reproduced and exceeded on our own env. The regression-rate secondary is
+reported only against a null band built by re-simulating each run's own
+rating multiset rearranged monotone over steps — because the bare number
+reads a run that never learns at ~48%, worse than genuine forgetting.
+
+Findings worth the compute:
+
+- **Intransitivity is everywhere: the cycling detector fired in 19 of 19
+  tournaments** (3.5–10.8% intransitive triples against acyclic null bands
+  topping out at 0.2–1.3%). Czarnecki et al. place Connect 4 in the
+  "spinning top" class whose cyclic dimension is widest at intermediate
+  strength — exactly the band these agents occupy. Late regression is the
+  norm, not an anomaly: the best ladder rung is not the final one in most
+  runs, which is what makes tournament selection (never `best_checkpoint`)
+  the instrument of record.
+- **Three pre-registered fix levers ran as full arms, and only the one aimed
+  at its target hit it.** Mixing 5% fixed-opponent games into the pool draw
+  eliminated the vs-random decline on 2 of 3 seeds (final = curve max) at no
+  Elo cost — external coverage bought by construction. An entropy floor (5×
+  coefficient) bought the best self-play coverage measured (176/200 distinct
+  games) and the repo's first monotone ladder, but with extreme seed variance.
+  AlphaStar's PFSP weighting produced the best single final (−41.3) *and* the
+  worst forgetting tails — concentrating games on hard opponents trades
+  robustness-to-past for current strength, a coherent trade now measured.
+- **The ceiling is distribution, not architecture.** No training variant —
+  pool, naive, either fork, any lever — moved optimal-move agreement out of
+  the same band (0.29–0.39 mid-game, 0.52–0.61 endgames). A supervised run of
+  the *same network* on 100k exactly-solved positions reaches **0.855**
+  agreement in-distribution, but only 0.44–0.62 on the held-out benchmark
+  sets: the net can represent far more than self-play teaches it, and the
+  binding constraint is the narrow state distribution self-play visits — the
+  coverage-collapse mechanism made quantitative. The training signal itself
+  is worth ~0.1 agreement on the eval sets; everything beyond that requires
+  broadening where the policy lives, which is what the capstone's
+  team-randomized format does by construction.
+- **A low value loss can mean the opposite of what it looks like.** The
+  self-play critics predict their own games nearly perfectly (MSE down to
+  0.002) while being worse than a constant "50%" predictor on benchmark
+  positions — they memorized a collapsed distribution (down to 2 distinct
+  games in 200, a single deterministic line replayed against itself). The
+  supervised critic, trained broadly, carries real signal onto the same sets
+  (Brier 0.16 vs the uninformative 0.25). Same architecture, same loss —
+  the difference is entirely what states it saw.
+- **Instrument design was half the phase.** `eval/win_rate` comes from an
+  env-supplied outcome, never the reward sign — a sign-flipped reward scores
+  1.000 on the naive definition and passes its own detector (measured). MAE
+  against graded solver scores was rejected because it ranks a constant-zero
+  critic above a perfect one. An undefeated player's Bradley–Terry rating
+  does not diverge — it creeps ~372 Elo per decade of iterations, which a
+  convergence tolerance converts into a finite, wrong number; the harness
+  refuses non-Ford matrices and drops perfect scorers instead.
+
+Caveats stated rather than buried:
+
+- **Absolute strength is mediocre, as pre-registered**: the best final sits
+  ~124 Elo below a depth-2 alpha-beta anchor. The phase's product is the
+  validated self-play loop and the instrument stack, not a strong player —
+  strength was the success criterion of neither.
+- **The forgetting result does not transfer to the capstone by default.**
+  Connect 4 is deterministic, perfect-information, and alternating-move;
+  Gen 1 Showdown is stochastic, imperfect-information, and simultaneous —
+  the exact class OpenAI Five scopes strategy collapse to. What transfers is
+  the machinery and the instruments, which is what they were built for.
+- **Seed variance is large at this scale** (~65 Elo within-arm for the
+  campaign, larger for the levers), which is why every claim above rests on
+  3 seeds per arm and bootstrap intervals, and close calls are called ties.
 
 ## Setup
 
