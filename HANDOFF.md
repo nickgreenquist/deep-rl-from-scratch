@@ -6,9 +6,11 @@ the session log holds every finding. Do not re-litigate settled decisions;
 if one looks wrong, say so and ask.
 
 ## State
-- Clean, 271 tests green, all mutation batteries passing (every real
-  mutation caught, every control surviving). Check `git log` for the tip;
-  ask before pushing anything.
+- Clean at `ab4a707`, 271 tests green, all mutation batteries passing
+  (every real mutation caught, every control surviving). **NOT pushed:
+  origin is ~20 commits behind (last sync `c4464c6`)** — offer a push
+  early, but only with an explicit go-ahead (commit and push are never
+  one command).
 - **Phase 4 is COMPLETE** (chunks 1–4 all ticked; see the 2026-07-28/29
   session-log entries). The campaign, three probe-lever arms, the
   supervised-on-solver-labels diagnostic, figure
