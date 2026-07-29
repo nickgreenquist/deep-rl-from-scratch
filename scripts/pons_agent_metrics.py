@@ -80,16 +80,19 @@ def fetch(name: str, data_dir: Path) -> Path:
     return path
 
 
-def load_final(run_dir: Path):
+def load_final(run_dir: Path, allow_non_selfplay: bool = False):
     """The run's final agent (checkpoint.pt), loaded exactly as the
-    tournament loads a rung."""
+    tournament loads a rung. The selfplay guard catches the wrong KIND of
+    run being scored by mistake; the supervised diagnostic opts out of it
+    explicitly (--allow-non-selfplay), never silently."""
     path = run_dir / "checkpoint.pt"
     if not path.exists():
         raise SystemExit(f"{run_dir}: no checkpoint.pt — not a finished run dir")
     ckpt = load_checkpoint(path)
     cfg = Config(**ckpt["config"])
-    if not cfg.selfplay:
-        raise SystemExit(f"{path}: not a self-play run (empty selfplay config)")
+    if not cfg.selfplay and not allow_non_selfplay:
+        raise SystemExit(f"{path}: not a self-play run (empty selfplay config); "
+                         "pass --allow-non-selfplay if this is intentional")
     torch.set_num_threads(cfg.torch_threads)
     env = make_eval_env(cfg)
     agent = make_agent(cfg, env)
@@ -164,9 +167,12 @@ def main() -> None:
     parser.add_argument("--data-dir", default="data", type=Path)
     parser.add_argument("--out", type=Path, default=None,
                         help="JSON output path (default <run_dir>/pons_metrics.json)")
+    parser.add_argument("--allow-non-selfplay", action="store_true",
+                        help="score a non-self-play checkpoint (the supervised "
+                             "diagnostic) instead of refusing it")
     args = parser.parse_args()
 
-    agent = load_final(args.run_dir)
+    agent = load_final(args.run_dir, allow_non_selfplay=args.allow_non_selfplay)
     result = {"run_dir": str(args.run_dir), "value": {}, "policy": {},
               "policy_coverage": f"{len(args.policy_sets)}/{len(SETS)} sets"}
     for name in args.value_sets:
