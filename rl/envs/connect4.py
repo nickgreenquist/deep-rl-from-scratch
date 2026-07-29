@@ -271,6 +271,10 @@ class Connect4Env(gym.Env):
             # sign makes a `return > 0` win rate read 1.000 and pass its own
             # detector at the ceiling.
             info["outcome"] = outcome
+            # PFSP's feedback channel: only this env knows both which
+            # opponent select() chose and how the episode ended. No-op on
+            # every opponent except the snapshot pool.
+            self.opponent_source.report(self._opponent, outcome)
         # Terminal-only reward, equal to the outcome: +1 win, -1 loss, 0 draw
         # or game continuing. Every reward is a delayed reward, which is why
         # the configs run gamma = 1.0.

@@ -165,7 +165,11 @@ def train(cfg: Config) -> None:
         push_every = cfg.selfplay["push_every_updates"]
         if push_every < 1:
             raise ValueError(f"push_every_updates must be >= 1, got {push_every}")
-        pool = SnapshotPool(cfg.selfplay["pool_size"], cfg.selfplay["latest_prob"])
+        pool = SnapshotPool(
+            cfg.selfplay["pool_size"], cfg.selfplay["latest_prob"],
+            pfsp_power=cfg.selfplay.get("pfsp_power", 0.0),
+            fixed_mix=cfg.selfplay.get("fixed_mix", 0.0),
+        )
         train_env_kwargs["opponent"] = pool
     if vectorized:
         env = make_vec_env(cfg.env_id, cfg.seed, cfg.num_envs, env_kwargs=train_env_kwargs)
@@ -351,6 +355,12 @@ def _vector_loop(
                 # selfplay/* is logged from here, never from pool code
                 # (locked metric-namespace rule, CLAUDE.md).
                 logger.log({"selfplay/pool_size": len(pool)}, step)
+            if pool is not None:
+                # PFSP weights snapshot at the same boundary the push
+                # cadence uses: counts accumulate during the rollout, the
+                # draw only sees them from the next rollout on, so the
+                # opponent distribution stays fixed within a rollout.
+                pool.refresh()
         # Episode returns are always accumulated in TRUE env units. With
         # reward normalization on, `rewards` is scaled by a running statistic
         # that itself moves during training, so logging it would make

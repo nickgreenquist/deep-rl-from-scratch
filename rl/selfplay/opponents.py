@@ -59,6 +59,14 @@ class Opponent(ABC):
     def freeze(self) -> None:
         """Enter no-training mode. No-op for rule-based opponents."""
 
+    def report(self, played: "Opponent", outcome: int) -> None:
+        """The env reports how an episode ended: `played` is the opponent
+        `select()` returned for it, `outcome` the LEARNER's result
+        (+1/0/-1). No-op everywhere except the snapshot pool, whose PFSP
+        weighting is the one consumer — the env is the only place that
+        knows both who played and who won, which is why the hook lives on
+        the source rather than in the training loop."""
+
 
 def board_from_obs(obs: np.ndarray) -> np.ndarray:
     """Egocentric planes -> a canonical int8 board (+1 = the viewer, who is
