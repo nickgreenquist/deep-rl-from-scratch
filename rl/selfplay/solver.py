@@ -197,6 +197,15 @@ class TranspositionTable:
         self.entries[key % self.size] = key << 8 | (value + 21) << 2 | flag
 
 
+class SearchBudgetExceeded(Exception):
+    """A budgeted solve() crossed its per-solve node cap. Every table entry
+    stored before the abort is still a valid bound — an interrupted search
+    stores nothing wrong — so the solver stays safe to keep using. Exists
+    for dataset generation over random-playout positions, whose solve-time
+    distribution has a measured heavy tail (PLAN.md, 2026-07-29): the cap
+    bounds the tail, the caller rejects the position."""
+
+
 class Solver:
     """Exact negamax + alpha-beta over the bitboard. `solve()` returns the
     Pons-convention score of a live position (see module docstring).
@@ -207,12 +216,17 @@ class Solver:
     shared solver and a fresh-per-position solver agree.
 
     `nodes` counts negamax entries since construction; the perf numbers in
-    PLAN.md (894k nodes/s) are in these units.
+    PLAN.md (894k nodes/s) are in these units. `node_budget`, if set, caps
+    each individual solve() call (not the lifetime count — a warm shared
+    solver must not inherit its predecessors' spend), raising
+    SearchBudgetExceeded past the cap.
     """
 
-    def __init__(self, tt_size: int = TT_SIZE):
+    def __init__(self, tt_size: int = TT_SIZE, node_budget: "int | None" = None):
         self.tt = TranspositionTable(tt_size)
         self.nodes = 0
+        self.node_budget = node_budget
+        self._solve_start = 0
 
     def solve(self, bb: Bitboard) -> int:
         """Pons' chapter-8 driver: iterative narrowing by null-window
@@ -231,6 +245,7 @@ class Solver:
         """
         if _alignment(bb.current) or _alignment(bb.current ^ bb.mask):
             raise ValueError("position is already won; solve() wants a live position")
+        self._solve_start = self.nodes
         lo = -((CELLS - bb.moves) // 2)
         hi = (CELLS + 1 - bb.moves) // 2
         while lo < hi:
@@ -257,6 +272,8 @@ class Solver:
         # collapse to zero (scripts/mutations/chunk3_solver.py).
         assert alpha < beta
         self.nodes += 1
+        if self.node_budget is not None and self.nodes - self._solve_start > self.node_budget:
+            raise SearchBudgetExceeded(f"solve exceeded {self.node_budget} nodes")
         if bb.moves == CELLS:
             return 0  # full board, and the mover's opponent did not win
         # Win-before-full ordering, solver edition: this scan runs before

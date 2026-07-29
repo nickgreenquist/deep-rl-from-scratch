@@ -32,6 +32,15 @@ MUTATIONS = [
     ("move-scores-child-not-negated", SOLVER,
      "            scores[col] = -solver.solve(bb.play(col))",
      "            scores[col] = solver.solve(bb.play(col))"),
+    # ------------------------------------------------------ solve node budget
+    ("budget-check-dropped", SOLVER,
+     """        self.nodes += 1
+        if self.node_budget is not None and self.nodes - self._solve_start > self.node_budget:
+            raise SearchBudgetExceeded(f"solve exceeded {self.node_budget} nodes")""",
+     "        self.nodes += 1"),
+    ("budget-counts-lifetime-not-per-solve", SOLVER,
+     "        if self.node_budget is not None and self.nodes - self._solve_start > self.node_budget:",
+     "        if self.node_budget is not None and self.nodes > self.node_budget:"),
     # ------------------------------------------------- play_game extensions
     ("start-position-ignored", OPP,
      "    board = Connect4Board() if start is None else start.copy()",

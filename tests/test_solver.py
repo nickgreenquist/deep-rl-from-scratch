@@ -25,7 +25,13 @@ from rl.selfplay.opponents import (
     make_opponent,
     play_game,
 )
-from rl.selfplay.solver import Bitboard, Solver, brute_force, solver_move_scores
+from rl.selfplay.solver import (
+    Bitboard,
+    SearchBudgetExceeded,
+    Solver,
+    brute_force,
+    solver_move_scores,
+)
 from tests.test_connect4 import (
     DRAW_42,
     WIN_FIXTURES,
@@ -391,6 +397,35 @@ def test_play_game_is_deterministic_given_the_rng():
     first, again = outcomes(), outcomes()
     assert first == again
     assert len(set(first)) > 1  # and the games are not all the same result
+
+
+def test_node_budget_caps_each_solve_not_the_lifetime():
+    """Per-solve semantics: a budget sized to the largest single solve must
+    pass every solve even though the CUMULATIVE count crosses it many times
+    over (a warm shared solver must not inherit its predecessors' spend) —
+    and the results must be bit-identical to an uncapped solver. An
+    exceeded budget raises, and the solver stays usable afterwards: the
+    aborted search stored only valid bounds."""
+    rng = np.random.default_rng(13)
+    positions = [random_position(rng, 30) for _ in range(10)]
+    plain = Solver()
+    expected, deltas = [], []
+    for bb in positions:
+        before = plain.nodes
+        expected.append(plain.solve(bb))
+        deltas.append(plain.nodes - before)
+    budget = max(deltas)
+    assert sum(deltas) > budget  # power: the lifetime-counting mutant must trip
+    assert deltas[1] > 1  # power: budget 1 below must actually abort
+
+    capped = Solver(node_budget=budget)
+    assert [capped.solve(bb) for bb in positions] == expected
+
+    capped.node_budget = 1
+    with pytest.raises(SearchBudgetExceeded):
+        capped.solve(positions[1])
+    capped.node_budget = budget
+    assert capped.solve(positions[0]) == expected[0]
 
 
 def test_solver_move_scores_match_full_depth_alphabeta():
