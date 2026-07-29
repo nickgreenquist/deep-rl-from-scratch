@@ -25,7 +25,7 @@ from rl.selfplay.opponents import (
     make_opponent,
     play_game,
 )
-from rl.selfplay.solver import Bitboard, Solver, brute_force
+from rl.selfplay.solver import Bitboard, Solver, brute_force, solver_move_scores
 from tests.test_connect4 import (
     DRAW_42,
     WIN_FIXTURES,
@@ -391,6 +391,28 @@ def test_play_game_is_deterministic_given_the_rng():
     first, again = outcomes(), outcomes()
     assert first == again
     assert len(set(first)) > 1  # and the games are not all the same result
+
+
+def test_solver_move_scores_match_full_depth_alphabeta():
+    """Differential between the two search implementations, per move: the
+    TT'd solver's move scores must equal full-depth alpha-beta's on random
+    endgames — including positions holding a win-in-1, where the win check
+    must fire BEFORE the child solve (solve() refuses a won child)."""
+    rng = np.random.default_rng(11)
+    solver = Solver()
+    saw_win_in_1 = False
+    for _ in range(10):
+        bb = random_position(rng, 34)
+        scores = solver_move_scores(solver, bb)
+        assert scores == alphabeta_move_scores(bb, CELLS - bb.moves)
+        saw_win_in_1 |= any(
+            bb.can_play(c) and bb.is_winning_move(c) for c in range(COLS)
+        )
+    assert saw_win_in_1  # the seed must actually exercise the win branch
+    # No small-fixture variant on purpose: a win-in-1 position with few
+    # stones has NON-winning children 35+ empties deep — the Begin-set
+    # difficulty class, minutes per solve. The endgame differential above
+    # covers the win branch (asserted) at test speed.
 
 
 def test_play_game_records_the_move_sequence():

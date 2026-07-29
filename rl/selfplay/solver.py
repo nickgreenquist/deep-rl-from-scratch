@@ -302,6 +302,26 @@ class Solver:
         return best
 
 
+def solver_move_scores(solver: Solver, bb: Bitboard) -> "dict[int, int]":
+    """Exact Pons-convention score of every legal move: the phase's spine
+    claim that a move is optimal only if its CHILD's value is -v(p), as a
+    function (Pons' labels alone cannot rank moves — PLAN.md). The
+    win-in-1 check must run before the child solve, and not only for
+    speed: `solve()` refuses already-won positions, and a winning move's
+    child is exactly that. The caller owns the solver so batch scoring
+    (the Pons policy metrics) keeps one warm transposition table across a
+    whole set."""
+    scores = {}
+    for col in MOVE_ORDER:
+        if not bb.can_play(col):
+            continue
+        if bb.is_winning_move(col):
+            scores[col] = (CELLS + 1 - bb.moves) // 2
+        else:
+            scores[col] = -solver.solve(bb.play(col))
+    return scores
+
+
 def brute_force(bb: Bitboard) -> int:
     """The differential oracle: negamax with NOTHING in it — no pruning, no
     transposition table, no ordering, no early return on a found win. Only

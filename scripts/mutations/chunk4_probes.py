@@ -19,8 +19,20 @@ update the spec, not to delete the mutation.
 TESTS = ["tests/test_solver.py"]
 
 OPP = "rl/selfplay/opponents.py"
+SOLVER = "rl/selfplay/solver.py"
 
 MUTATIONS = [
+    # ------------------------------------------------- solver_move_scores
+    ("move-scores-solve-the-winning-child", SOLVER,
+     """        if bb.is_winning_move(col):
+            scores[col] = (CELLS + 1 - bb.moves) // 2
+        else:
+            scores[col] = -solver.solve(bb.play(col))""",
+     "        scores[col] = -solver.solve(bb.play(col))"),
+    ("move-scores-child-not-negated", SOLVER,
+     "            scores[col] = -solver.solve(bb.play(col))",
+     "            scores[col] = solver.solve(bb.play(col))"),
+    # ------------------------------------------------- play_game extensions
     ("start-position-ignored", OPP,
      "    board = Connect4Board() if start is None else start.copy()",
      "    board = Connect4Board()"),
