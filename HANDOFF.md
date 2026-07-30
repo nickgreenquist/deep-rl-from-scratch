@@ -1,4 +1,4 @@
-# Handoff — PHASE 4 COMPLETE; Phase 5 (capstone) next
+# Handoff — Phase 5 started; env plumbing DONE, collection loop next
 
 Instructions to a fresh session of Claude Code after a context clear. Trust
 `PLAN.md` over anything here if they disagree — it is the locked spec and
@@ -6,85 +6,70 @@ the session log holds every finding. Do not re-litigate settled decisions;
 if one looks wrong, say so and ask.
 
 ## State
-- Clean at `ab4a707`, 271 tests green, all mutation batteries passing
-  (every real mutation caught, every control surviving). **NOT pushed:
-  origin is ~20 commits behind (last sync `c4464c6`)** — offer a push
-  early, but only with an explicit go-ahead (commit and push are never
-  one command).
-- **Phase 4 is COMPLETE** (chunks 1–4 all ticked; see the 2026-07-28/29
-  session-log entries). The campaign, three probe-lever arms, the
-  supervised-on-solver-labels diagnostic, figure
-  (`assets/connect4_forgetting.png`), README section, and the gitignored
-  `runs/connect4_campaign.sh` reproduction record are all landed.
-- **The three durable Phase-4 findings** (do not rediscover): naive
-  self-play forgets and the 20-snapshot pool prevents it (AlphaStar proxy,
-  no overlap between arms); intransitivity is structural at this strength
-  band (cycling detector fired in 19/19 tournaments); and the tactical
-  ceiling is the VISITED STATE DISTRIBUTION, not the architecture — the
-  same net reaches 0.855 optimal-move agreement supervised in-distribution
-  vs 0.29–0.61 for every RL variant on the Pons sets. Lever verdicts:
-  fixed-opponent mixing was the only lever to hit its target (vs-random
-  decline eliminated on 2/3 seeds); entropy floor buys coverage with
-  extreme seed variance; PFSP trades robustness-to-past for current
-  strength.
-- 17 finished run dirs under `runs/connect4_*` and `runs/supervised_*`,
-  each with tournament/forgetting/coverage/value-MSE/Pons JSONs where
-  applicable.
+- Origin is in sync through `8f82859`; commits after that (Phase 5 step 1 +
+  this doc pass) are local — offer a push, explicit go-ahead only.
+- 278 tests green. **Phase 5 step 1 (env plumbing) is DONE** (see the
+  2026-07-29 "Phase 5 opens" session-log entry): `poke-env==0.15.0` pinned,
+  local Showdown server at pinned sha `59da482` via
+  `scripts/setup_showdown.sh` (gitignored `showdown/`), and
+  `rl/envs/showdown.py` — `ShowdownSingles` + the `ShowdownEnv` adapter
+  (mask lifted obs→`info["action_mask"]`, `info["outcome"]` from
+  `battle.won`/`lost` never term/trunc, terminal-only reward = outcome),
+  registered as `Showdown-v0` through `make_env`.
+- Server must be RUNNING for the integration test (it self-skips when
+  :8000 is down) and any battles:
+  `cd showdown && node pokemon-showdown start --no-security`.
+- `embed_battle` is a 10-dim PLACEHOLDER encoder — plumbing only; the
+  encoder-design step replaces it after the throughput measurements.
+- Measured baseline: ~1,100 agent-steps/s, one env, one process, no policy
+  net, mask-random policy. Mask-random loses 0/10 to `max_power` and
+  `heuristics` (milestone-1 headroom is real).
 
 ## Read, in order
-1. `CLAUDE.md` — hard rules (no RL libraries; the `open_spiel` dev-only
-   carve-out), the handed-over-command format (one command per fenced
-   block, ONE line, no inline comments, `<command>`/`</command>` sentinels
-   OUTSIDE the fence), the >5-minute-runs-go-to-the-maintainer rule, and
-   the CPU-first capstone hardware note (revised 2026-07-28).
-2. `PLAN.md` § Phase 5 — the capstone spec: poke-env `SinglesEnv` (the old
-   `Gen*EnvSinglePlayer` API is DEAD, removed in 0.8.4), action mask
-   arrives in the OBSERVATION and needs one adapter wrapper lifting it
-   into `info`, `truncated` is load-bearing (forfeits/ties/timer), the
-   hardware section's four pre-registered throughput measurements, the
-   single-inference-seam collection-loop contract, and the named-optional
-   BC-on-replays diagnostic.
-3. PLAN.md § Phase 4's findings entries (2026-07-28/29) — they set the
-   capstone's priorities: opponent/state diversity is what matters;
-   encoder capacity at this scale is not the fear.
+1. `CLAUDE.md` — hard rules, handed-over-command format, >5-minute rule,
+   CPU-first hardware note.
+2. `PLAN.md` § Phase 5 — especially the four pre-registered throughput
+   measurements (a)–(d) and the single-inference-seam collection-loop
+   contract (battle coroutines submit observations to one seam; batch-1 /
+   micro-batched / lockstep-vector stay config choices).
+3. The 2026-07-29 session-log entries (Phase 4 wrap + Phase 5 opening).
 
-## Phase 5 first steps (nothing is committed to yet — plan with the maintainer)
-1. Env plumbing: local Node.js Showdown server + poke-env pinned dep
-   (through `pyproject.toml`, exact pin), `gen1randombattle`, the
-   mask-to-info adapter wrapper, `info["outcome"]` mapping.
-2. The four pre-registered throughput measurements (PLAN.md hardware note)
-   BEFORE any provisioning or vectorization decision.
-3. Milestone ladder: beat `MaxBasePowerPlayer` → beat
-   `SimpleHeuristicsPlayer` (headline metric: win rate over ≥1000 battles,
-   multiple seeds) → self-play with the pool → optional ladder Elo.
-4. What transfers from Phase 4: the pool/`Opponent` protocol (including
-   `report()` for PFSP and `fixed_mix` — the one lever that worked),
-   `eval/win_rate` from `info["outcome"]`, the forgetting instruments, and
-   the lesson that opponent diversity is the thing to engineer for.
+## Next steps (order NOT settled — decide with the maintainer)
+1. Collection-loop seam + throughput measurements (a)–(d): they gate every
+   vectorization/provisioning decision and (d) prices the encoder budget.
+   Measurement (a)'s latency breakdown wants per-turn timing hooks.
+2. Milestone-1 train wiring: a `configs/showdown_*.yaml`, PPO through
+   `python -m rl.train`, eval vs `max_power` (`eval/win_rate` already works
+   — `info["outcome"]` is emitted). Blocked-ish on 1: `SubprocVecEnv`-vs-
+   asyncio is exactly what the measurements decide.
+3. Encoder design (replace the placeholder) — after 1 prices it.
+4. Self-play later: the pool/`Opponent` protocol transfers, but the
+   opponent enters via `SingleAgentWrapper(env, opponent)` and needs a
+   Player adapter driving seat 2 from our policy (not written yet).
 
 ## Gotchas not in the plan
 - `deep-rl` conda env only: `/opt/anaconda3/envs/deep-rl/bin/pytest tests/`.
-- Training and anything multi-minute goes to the maintainer's terminal
-  (`WANDB_MODE=offline` on training commands); the ~1-minute class may run
-  in-session. When in doubt, hand it over.
-- Never edit the tree (even uncommitted) while the maintainer may be
-  LAUNCHING a run — launches stamp `git_dirty`, and an untracked file is
-  enough to flip it (measured: an advisory .md dirtied 8 of 9 lever-run
-  stamps; the attribution note is in the 2026-07-29 lever entry). Never
-  run mutation batteries while any maintainer process might import mutated
-  source.
-- zsh traps in handed-over commands: no `echo =====`, no inline `#`, no
-  multi-line blocks; state-changing steps one block at a time.
+- Multi-minute runs go to the maintainer's terminal (`WANDB_MODE=offline`).
+- Never edit the tree (even untracked files) while the maintainer may be
+  LAUNCHING a run — `git_dirty` stamps flip on untracked files (measured).
+- zsh traps in handed-over AND in-session commands: no `echo ===` (glob
+  error), no inline `#`, one command per block, `<command>` sentinels.
+- poke-env: actions must be `np.int64` (`action_to_order` calls
+  `action.item()`); `SingleAgentWrapper` lives at
+  `poke_env.environment.SingleAgentWrapper` (not `.player.`); opponent
+  Players get `start_listening=False` (their `choose_move` is called
+  directly — no websocket needed).
+- Showdown config: `exports.repl = false` appended (REPL sockets EINVAL-
+  crash on macOS + Node 25); setup script handles it on re-clone.
+- Battles are NOT seed-reproducible (server rolls teams/damage); variance
+  is handled by battle count (≥1000/matchup), not seeds.
 - The mutation batteries' `old` strings match current source exactly; a
   refactor that breaks one is a prompt to update the spec, not delete it.
-- `scripts/pons_agent_metrics.py` refuses non-self-play checkpoints unless
-  `--allow-non-selfplay`; `best_checkpoint.pt` feeds no reported number
-  anywhere (selection bias — tournaments select).
 
 ## First actions
-1. Confirm with the maintainer that Phase 5 is starting and which step
-   comes first (env plumbing is the natural opening; dependency changes go
-   through `pyproject.toml` with exact pins and a go-ahead).
-2. Read the docs above.
+1. Ask the maintainer: collection-loop seam + measurements first, or
+   milestone-1 train wiring first (see Next steps).
+2. Check the server is up before running the suite if you want the
+   integration test to actually run.
 3. State which files you'll create/change and why; wait for a go-ahead.
-4. Small commits, pytest green per step, mutation-test each guard.
+4. Small commits, pytest green per step, mutation-test each new guard.
