@@ -37,9 +37,11 @@ From-scratch deep RL in PyTorch, built as a portfolio piece over multiple months
 
 ## Plan and status
 
-`PLAN.md` (repo root) is the living working doc — per-phase definitions of done (checkboxes = current status), open decisions, and a session log. Update it as work lands.
+`PLAN.md` (repo root) is the living working doc — per-phase definitions of done (checkboxes = current status) and open decisions. Update it as work lands.
 
-`HANDOFF.md` is NOT updated as work lands — write it only when the maintainer asks for a handoff (i.e. they're about to clear context and want the next session able to resume). PLAN.md carries the durable record; HANDOFF.md is a point-in-time resume note.
+`SESSION_LOGS.md` holds the dated session-log entries (findings, decisions, run records). Append an entry there as work lands. Read it SELECTIVELY — grep a date, phase, or finding — never whole; it is large by design.
+
+`HANDOFF.md` is EMPTY except mid-handoff. Write it only when the maintainer explicitly asks for a handoff (they're about to clear context and hand back to a fresh session). The receiving session reads it, folds anything durable into PLAN.md / SESSION_LOGS.md, and restores the empty stub. Nothing persists there.
 
 ## Working with the maintainer
 
@@ -49,6 +51,8 @@ From-scratch deep RL in PyTorch, built as a portfolio piece over multiple months
 - **Runs longer than ~5 minutes go in the maintainer's terminal, not through Claude.** Hand over the exact command to run (env vars, config path, seed loop included), then read the resulting logs/checkpoints from disk and take it from there. Hard-learned on a prior project: PyTorch training launched through Claude Code tooling (Bash sessions, subagents, workflows) ran ~10x slower than the same command in a plain terminal. Short smokes and pytest stay in-session.
 - **Handed-over commands: one command per fenced block, never a multi-line block.** Multi-line pastes often mis-execute in the maintainer's terminal. No inline `#` comments (interactive zsh doesn't parse them — a comment after `kill` was read as PIDs); explanation goes in prose around the block. State-changing steps (kill, rm) are separate blocks run one at a time; a set of runs meant to execute together is ONE line, `&&`-chained so a failure stops the rest. Don't reach for `&`/job control unless asked.
 - **Wrap every handed-over command block in `<command>` / `</command>` sentinel lines** so its boundaries are unambiguous when scrolling or copying: `<command>` on its own line, then the fenced block, then `</command>`. The sentinels go OUTSIDE the fence, never inside it — nothing but the command itself may be copyable from the block.
+- **Never edit the tree (even untracked files) while the maintainer may be LAUNCHING a run** — launches stamp `git_dirty`, and one untracked .md is enough to flip it (measured: it dirtied 8 of 9 lever-run stamps; see the 2026-07-29 lever entry in SESSION_LOGS.md). Never run mutation batteries while any maintainer process might import mutated source.
+- **zsh traps in ANY command (handed-over or in-session):** `echo ===` is a glob error in zsh; inline `#` comments don't parse in interactive zsh.
 - **Git:** commit only when asked; never commit+push in one command — commit, then ask before pushing.
 - To watch a recorded GIF, tell the maintainer to drag the file into Chrome — Preview/`open` shows a static filmstrip, not the animation.
 
