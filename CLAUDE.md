@@ -39,6 +39,8 @@ From-scratch deep RL in PyTorch, built as a portfolio piece over multiple months
 
 `PLAN.md` (repo root) is the living working doc — per-phase definitions of done (checkboxes = current status), open decisions, and a session log. Update it as work lands.
 
+`HANDOFF.md` is NOT updated as work lands — write it only when the maintainer asks for a handoff (i.e. they're about to clear context and want the next session able to resume). PLAN.md carries the durable record; HANDOFF.md is a point-in-time resume note.
+
 ## Working with the maintainer
 
 - Deep ML/DL fluency (production PyTorch recommender systems background). Do not explain gradient descent, tensors, or PyTorch basics. RL specifically is new — do explain RL concepts and algorithm design choices when they first appear.
