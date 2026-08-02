@@ -48,7 +48,7 @@ python -m rl.train --config configs/<run>.yaml
 | 2 | PPO (GAE, clipped objective, entropy bonus, vectorized rollouts) | **done, both tracks** — beats DQN on 3 of 5 MinAtar games; reproduces the reference on MuJoCo locomotion (see Results) |
 | 3 | SAC (twin critics, reparameterized actor, auto-tuned entropy temperature) | **done** — beats PPO on all three MuJoCo envs per sample and loses to it per minute; validated against published SAC (see Results) |
 | 4 | Connect 4 self-play on-ramp: opponent pool, checkpoint Elo harness | **done** — naive self-play forgets (no proxy overlap vs the pool arm), measured on an exact-oracle instrument stack (see Results) |
-| 5 | Capstone: Pokémon Showdown Gen 1 via PPO + self-play | planned |
+| 5 | Capstone: Pokémon Showdown Gen 1 via PPO + self-play | **in progress** — milestone 1 passed; milestone 2 (0.5 vs SimpleHeuristics) not passed, best 0.408; milestone-3 self-play campaign complete, and the ~0.4 plateau is shown to be training-side (see Results) |
 
 ## Results — Phase 1: DQN on MinAtar
 
@@ -516,6 +516,216 @@ Caveats stated rather than buried:
 - **Seed variance is large at this scale** (~65 Elo within-arm for the
   campaign, larger for the levers), which is why every claim above rests on
   3 seeds per arm and bootstrap intervals, and close calls are called ties.
+
+## Results — Phase 5: PPO + self-play on Pokémon Showdown (milestones 1–3)
+
+![Milestone 3 on Pokémon Showdown: training curves for the fixed-bot run and three from-scratch self-play seeds converging to ~0.4 vs SimpleHeuristics, against the 0.5 bar, the extrapolated 0.42 asymptote and the BC-clone band; right panel, locked-protocol finals for every arm with 95% CIs](assets/showdown_milestone3.png)
+
+The capstone is live: the same `PPOAgent`, rollout buffer and GAE that ran
+MinAtar and MuJoCo now play Pokémon Showdown Gen 1 random battles over a
+websocket to a local Node.js server, through a 611-dimensional
+observable-state encoder written for this phase — revealed Pokémon and
+revealed moves only, the information set a player at the table actually has.
+Legal actions change every turn, which is what the harness-wide
+action-masking contract was built for back in Phase 2.
+
+**The headline: milestone 2's bar is not met, and the phase's result so far
+is knowing why.** Every training distribution tried — fixed-bot,
+warm-started self-play, from-scratch self-play — converges on the same ~0.4
+win rate against poke-env's `SimpleHeuristicsPlayer` (SH). A behavioral
+clone of that same bot, trained by supervised learning through the identical
+encoder, trunk and masking, plays **0.453**: the architecture demonstrably
+holds a better policy and supervised SGD demonstrably finds it, so the
+plateau is training-side — signal, visited states, or optimization, not
+representation. The caveat travels with the claim: nothing yet shows PPO can
+*reach* that policy under terminal-only reward. This section reports where
+the ceiling is not.
+
+**Protocol, fixed before the runs.** The milestone ladder — beat
+`MaxBasePowerPlayer` (always clicks the highest-base-power move), then beat
+SH — was set on 2026-07-25, before the first Showdown run; "beat" means
+above 0.5, and that bar has not moved. Headline evals use the **final**
+checkpoint (never best — selection bias), 1,000 fresh battles per seed at
+eval seeds disjoint from training's, deterministic policy, ties counted as
+non-wins. Throughout this section ± is one standard error of a battle-level
+proportion unless labelled otherwise; "pooled" is wins/total over all seeds'
+battles and carries no seed variance, so seed spread is quoted where a claim
+lives at the seed level. Milestone 1–2 headline numbers are single-seed;
+every milestone-3 number is 3-seed.
+
+| Milestone | Result | Status |
+|---|---|---|
+| 1 — beat `MaxBasePowerPlayer` | **0.663 ± 0.029** (95% CI, n=1 seed) at 2M steps | **passed** |
+| 2 — beat `SimpleHeuristicsPlayer` (0.5 bar) | best **0.408 ± 0.016** (12M, [512,512], n=1 seed); a 6M continuation reached 0.432 pooled but reads as specialization (below) | **not passed** |
+| 3 — self-play with a historical-checkpoint opponent pool | from-scratch self-play **learns**: 0.380 pooled vs SH; 0.484 head-to-head vs the equal-budget fixed-bot policy (a resolvable deficit, z ≈ −2.5) | **complete** — no win-rate bar; the deliverables were the loop and its pre-registered reads |
+
+### Milestone 2: four levers to 0.408
+
+A search path, not four confirmatory tests — each lever was chosen after
+reading the previous one, two of the four rows are single-seed, and the
+verdicts are campaign decisions ("was this worth more budget?"), not effect
+estimates:
+
+| Lever | Result | Verdict |
+|---|---|---|
+| Real encoder (10 → 611 dims) | ~0.26 (500-battle probe of the milestone-1 policy) → 0.292 ± 0.014 at 2M; the cross-protocol delta is not itself resolvable (z ≈ 1.2) | credited a priori — the placeholder encoder carried no HP/status/boost information at all, and the curve stopped plateauing |
+| Budget (2M → 6M at [64,64]) | 0.292 → 0.358 ± 0.015, flat from ~2.5M on at this width | credited, exhausted |
+| Capacity ([64,64] → [512,512]) | matched-budget 4–6M in-training bands 0.346 vs 0.316, and the shape: [64,64] flat from 2.5M, [512,512] still climbing at 12M (final 0.408 ± 0.016) | credited — biggest single lever; the 0.358 → 0.408 endpoint pairing confounds capacity with budget, so the attribution rests on the band and the shape |
+| Distribution (70/20/10 SH/max-power/random mixture, 3 seeds, 6M) | pre-registered in-training read fired "at/below"; locked-eval delta +0.032 ± 0.017 (z ≈ 1.9, against a single-seed control likely sitting in an eval dip) | not credited — at most a nudge, nowhere near the ~0.1 gap to the bar |
+
+The [512,512] curve's per-2M return gains decay geometrically
+(+0.153 / +0.103 / +0.061 / +0.027 / +0.016), extrapolating to ≈ 0.42 win
+rate vs SH — a projection from five points, not a measurement, but it is
+what ended the fixed-bot campaign: more budget in this configuration was not
+projected to reach 0.5, and self-play moved up the queue.
+
+### Milestone 3: three arms, one plateau — and the clone that locates it
+
+Self-play here is the Phase 4 machinery transplanted whole: a 20-snapshot
+opponent pool, strided retention with the step-0 snapshot as anchor, 80/20
+latest/historical draws, driving the opposing seat over the websocket. Every
+read below was pre-registered before launch. (In-training evals — "rungs" —
+are 100 episodes each, se ≈ 0.05; no claim here rests on a single rung.)
+
+- **Warm-started self-play, with a matched control (6M continuation each,
+  3 seeds).** Initialize both arms from the 0.408 fixed-bot policy; one
+  continues in self-play, the control continues vs the fixed bot. Self-play
+  produced no strength change any instrument could resolve: frozen-checkpoint
+  cross-play vs its own parent 0.5050 ± 0.0065 (n=6000 — within ±1.3
+  points); the windowed anchor (n ≈ 400/window, se 0.025) inside 0.465–0.551
+  in every window of every seed; and the highest-n instrument, pooled
+  training return, reads +0.0025 ± 0.0013 per window (z = 1.9) — edge of
+  resolution, not zero. At the recipe level the 3-seed design resolves only
+  ±0.14, so the null is about this initialization and budget, not the recipe
+  class. Huang & Lee's published 15.4% self-play forgetting did not fire.
+  The control gained +0.024 over its parent on the eval bot (0.432 pooled —
+  the campaign's best number, though a single-endpoint read at z ≈ 1.3 with
+  no measurable in-run improvement) yet ties both the self-play arm (0.501,
+  n=6000) and its own parent (0.510) head-to-head: the gain reads as
+  specialization to the bot it trained against, not strength.
+- **From-scratch self-play (12M, 3 seeds) — the ceiling arm.** No
+  warm-start, no fixed-bot games, the eval bot never seen in training, at
+  ~6% of the only published from-scratch budget in this setting. The
+  pre-registered expectation was 0.20–0.35; it landed above it — the
+  forecast was low. Finals: **0.380 ± 0.009** pooled (per-seed
+  0.369/0.398/0.373, spread 0.029); cumulative win rate against its own
+  random init 0.949–0.955. Head-to-head it sits at **0.484 ± 0.007** against
+  the equal-budget fixed-bot policy — a small but resolvable deficit
+  (z ≈ −2.5), about 1.6 points below parity — and 0.474 ± 0.006 against the
+  18M-step warm-started arm (z ≈ −4). Real deficits; what makes them worth
+  reporting is that this policy never saw SH and gives up only that much to
+  policies trained on it.
+- **The plateau.** Two independent training regimes land in a 0.38–0.41
+  band (from-scratch 0.380 ± 0.009; fixed-bot final 0.408 ± 0.016), with
+  from-scratch rungs flattening into 0.36–0.40 after ~8M, consistent with
+  the ≈ 0.42 projection. (Warm-started self-play finishing at 0.408 is not
+  independent evidence — a null returns its own initialization.)
+
+**The cloning diagnostic.** Which side of the policy does the plateau live
+on — representation or training? First, an audit of SH's source showed its
+realized Gen 1 policy is a near-closed-form function of features the
+encoder already carries (the one non-encoded factor is exposed on 1.8% of
+move rows). Then the wedge: clone SH by supervised learning through the
+exact capstone actor — same 611-dim encoder, same [512,512] trunk, same
+masking — on 40k SH-vs-SH battles, and evaluate it through the same
+1,000-battle harness. Two disclosed differences from the RL protocol: the
+clone reports its best-validation checkpoint, not final, and the collection
+instrument differs from the eval wrapper — the pre-registered pass margin
+was set to absorb both. The supervised fit gate was **not** met: best
+validation agreement 0.899–0.905 across three fits against a ≥ 0.93 gate,
+with the fit data-bound, not capacity-bound — agreement still climbing per
+data doubling toward the audit's predicted ~0.97 — so the pre-registered
+capacity probe was skipped as uninterpretable under a binding data
+constraint (a disclosed deviation; the agreement read closed as
+partial-trajectory-consistent, not verified). The win-rate read passed
+twice: **0.453** pooled (battery of record; three fit seeds on one dataset,
+so the interval is battle-level) and 0.465 on an earlier half-data
+generation (0.96σ apart). Against SH's own mirror baseline — the recorder's
+win rate over the collection battles, 0.489/0.486; ties-as-non-wins is why
+a mirror sits below 0.5 — the clone pays a real ~0.03 cloning tax (≈ 4σ):
+it is a demonstrably *imperfect* clone, and what is demonstrated is 0.453,
+not 0.49. That is enough: 0.453 sits **+0.045 above the best fixed-bot
+policy** (z ≈ 2.5, 95% CI +0.01 to +0.08). Capacity was milestone 2's
+biggest lever and the obvious next dose — a wider trunk — was never run;
+the clone is why: this trunk already represents a 0.453 policy, so capacity
+is not what binds.
+
+Findings worth the compute:
+
+- **Self-play's value depends on where you start — probably.** Warm-started
+  on a fixed-bot policy, 6M steps of pool self-play changed nothing any
+  instrument resolved; from scratch, the same recipe learned real play. But
+  the two arms differ in initialization, pool composition and budget at
+  once, so "the mirror opponent had nothing left to teach the warm-started
+  policy" is the leading hypothesis, not a measured attribution.
+- **Generalist vs specialist, measured from both sides.** The fixed-bot
+  control posted the campaign's best anchor number while gaining nothing
+  head-to-head against equal-budget policies; from-scratch self-play never
+  saw the anchor bot and nearly matches the specialist on its own turf.
+  Phase 4's visited-state-distribution lesson, recurring at capstone scale:
+  what a policy is strong against is what it trained against.
+- **The Phase 4 entropy collapse did not reproduce — as predicted.**
+  Tesauro's dice argument transfers: server-rolled random teams inject the
+  exploration Connect 4's deterministic board could not. Late entropy
+  medians ≈ 0.40–0.42 on every from-scratch seed; the pre-registered
+  collapse trigger never engaged; mirror self-play win rate held
+  0.505–0.506 all run (the ~0.5 equilibrium is the health check, not a
+  result).
+- **The eval bot is weaker than its source intends — everywhere.** The
+  audit found SH's setup-move branch is dead code upstream: poke-env 0.15.0
+  compares an int enum to a string ("`move.target == "self"`", always
+  False), so SimpleHeuristicsPlayer is a pure damage-maximizer plus
+  matchup-switcher in every 0.15.0 deployment, not just ours. Found by
+  auditing the baseline before cloning it. Internal comparability is
+  unaffected — every number here faced the same SH — and it's worth an
+  upstream report.
+- **"Best rung ≠ final" recurs on Showdown.** One from-scratch seed of
+  three regressed late (per-2M eval means 0.396 → 0.365 over the last 2M),
+  and it is the weak seed in cross-play against the warm-started arm
+  (0.434). Finals still report the final checkpoint per the locked
+  protocol; the regression is disclosed rather than selected away.
+
+Caveats stated rather than buried:
+
+- **Milestone 2 is not passed.** The bar was set on 2026-07-25 and has not
+  moved. Best measured is 0.408 (single-seed) / 0.432 (pooled, but
+  specialization per the head-to-head).
+- **The from-scratch result is a 6%-budget result.** Huang & Lee's
+  from-scratch PPO self-play used ~192M learner transitions on Gen 7 random
+  battles; this ran 12M. "Learns from scratch" is demonstrated; where it
+  plateaus at 16× the budget is not — untested, not ruled out.
+- **The clone result is one-directional.** Representable and
+  supervised-learnable does not mean PPO-reachable under terminal-only
+  reward. And its fit missed the pre-registered agreement gate (0.90 vs
+  0.93) with the capacity probe skipped, as disclosed above.
+- **The published anchors are context, not baselines.** Huang & Lee reached
+  1677 Glicko-1 on the Gen 7 random-battle ladder; Metamon reaches
+  human-level Gen 1 OU with offline RL and transformers. Neither number is
+  commensurable with a win rate against a scripted bot, and mixing such
+  protocols is the error this repo's Phase 2 taught.
+- **A seat asymmetry exists in cross-play:** at equal parameters the
+  deterministic eval seat beats the sampling seat by +0.018 ± 0.007. Every
+  head-to-head above averages both orientations, which cancels it; any
+  single-orientation number in this domain is biased by ~2 points.
+
+The phase so far is ~115M environment steps across ~25 runs — about 22
+hours of laptop-CPU wall clock, at most three concurrent runs against one
+local Showdown server, no GPU. Every run directory is self-describing
+(resolved config, git SHA, W&B history, checkpoints); the figure is
+`scripts/make_showdown_figure.py`, evals are
+`scripts/eval_checkpoint.py`.
+
+**Where this goes next.** Fixed-bot budget is spent (measured flat at
+[64,64], projected short at [512,512]) and every current-recipe self-play
+arm converges to the same place, so the next win rate costs a change of
+recipe, not more compute. Two cheap mechanism reads are queued — a
+team-luck variance decomposition, and a rollout-length probe that is a real
+training change and will be pre-registered as such. The genuinely new door
+is warm-starting PPO from the clone, which sits above every RL policy on
+this board — deliberately deferred: it changes what "from scratch" means
+for every number that follows, and deciding *in advance* what a 0.5 from a
+BC init would mean is exactly the kind of question this project
+pre-registers rather than answers after seeing the number.
 
 ## Setup
 
