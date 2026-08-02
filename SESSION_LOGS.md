@@ -1321,6 +1321,50 @@ order; earlier phases follow below.
   p4_eval_heur_1000.json each). *Next*: milestone-3 write-up + stop-rule decision, with P4's answer
   in hand; P3/P5 behind it.
 
+- 2026-08-02 (milestone-3 write-up SHIPPED after a three-Opus adversarial pass; stop rule adopted —
+  M3 ships now, the bar stops being chased under this recipe class, BC-warm-start deferred to its
+  own pre-registration) — **README gains "Results — Phase 5: PPO + self-play on Pokémon Showdown
+  (milestones 1–3)" plus a house-style figure (`scripts/make_showdown_figure.py` →
+  `assets/showdown_milestone3.png`: curves for heur_512 + the three scratch seeds vs the 0.5 bar /
+  0.42 projection / clone band; right panel locked-protocol finals with 95% CIs); Phase-5 status row
+  updated.** *Verification*: every number recomputed from run artifacts before commit (two script
+  passes, `verify_m3_numbers.py` in the session tmp dir) — finals, both cross-play orientations,
+  parent cells, clone batteries, val agreement (`best_agreement_free` 0.9017/0.8987/0.9047 at 40k;
+  0.8808–0.8857 at 20k), 4–6M rung bands, per-2M return-gain series (+0.153/+0.103/+0.061/+0.027/
+  +0.016 exact), entropy medians, winrate_latest, cumulative anchor finals, s0's 0.396→0.365 dip.
+  All match the log. NOT on disk, cited from committed log/spec with provenance stated: b
+  (0.489/0.486, collector printout), the 0.262 500-battle probe, the common-val data-gate deltas.
+  One windowing note: the [64,64] 4–6M band recomputes to 0.316 (the log's 0.312 was the 4.2–6M
+  half-average); the write-up prints 0.346-vs-0.316, both freshly computed on the same window.
+  wandb histories extracted to `runs/*/history.csv` (gitignored) for the figure. *Review pass*
+  (maintainer pre-authorized; correctness / experiment-design-statistics / research-strategy):
+  verdicts APPROVE-WITH-CORRECTIONS ×2 + one REJECT-until-reworked; all findings resolved, none
+  overturned a campaign conclusion. The write-up-shaping corrections adopted: capacity ledger row
+  had reprinted the budget-confounded 0.324→0.408 pairing the log itself refuses — replaced with
+  the matched-budget band + shape attribution; "zero measurable gradient" (retired 2026-08-01)
+  had crept back — replaced with below-instrument-resolution + the z=1.9 training-return trend +
+  the ±0.14 recipe-level MDE; the windowed anchor was quoted at cumulative n≈10k instead of
+  n≈400/window — fixed; the clone's MISSED R2 fit gate (0.899–0.905 vs ≥0.93) is now disclosed in
+  the section body next to the verdict, not buried; 0.484 is named a resolvable deficit (z≈−2.5)
+  and 0.474-vs-sp6m co-reported; ± convention unified (1 se unless labelled) with n=1-seed
+  headlines flagged; "above the band" demoted to calibration; the ~0.42 projection dropped from
+  the clone's load-bearing chain (verdict now rests on 0.453 vs 0.408, z≈2.5); Glicko-1 not Elo,
+  Gen 7 not "this domain"; "P4" never appears in the README (it's "the cloning diagnostic"); the
+  poke-env dead-branch bug promoted to its own findings bullet; headline finding moved above the
+  fold; closing reframed as research strategy. **STOP RULE (decision of record this session,
+  reviewer-backed; maintainer ratifies before any push): (1) milestone 3 ships with this write-up
+  — no queued run gates it; (2) P3 runs post-ship as an analysis appendix; P5 (rollout_steps 512)
+  is a REAL training probe and gets a pre-registered read + band + an explicit
+  what-would-amend-the-section condition before launch (the entropy_coef 0.003 probe stays queued
+  in the same optional set); (3) fixed-bot budget stops being spent on the 0.5 bar — measured flat
+  at [64,64], projected short at [512,512]; from-scratch self-play at 16× budget is UNTESTED and
+  deferred on cost, not excluded on evidence; the bar stays on the board, unmet and unmoved;
+  (4) BC-warm-start from the clone is deferred to its own design session with pre-registered
+  meaning — deciding in advance what a 0.5 from a BC init would count as, rather than after
+  seeing the number.** Suite green at 316; HANDOFF folded (nothing durable missing) and restored
+  to stub. *Next*: maintainer reviews the shipped section + ratifies the stop rule; push decision
+  (3 commits ahead before this session's); then P3, and the P5 pre-registration.
+
 - 2026-07-21 — Repo scaffolded: structure, README, CLAUDE.md, `.gitignore`, pinned `pyproject.toml`.
   Initial commit.
 - 2026-07-22 — Pushed to GitHub. Created `deep-rl` conda env; installed pinned deps and smoke-tested

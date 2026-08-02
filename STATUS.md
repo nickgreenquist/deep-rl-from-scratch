@@ -4,55 +4,56 @@ Current-state board. Rewritten in place (never appended) as work lands — updat
 same commit that appends a `SESSION_LOGS.md` entry; hard cap ~80 lines. If this file
 conflicts with the newest session-log entry, the log wins — say so and fix this file.
 
-## Where we are (updated 2026-08-02)
+## Where we are (updated 2026-08-02, evening)
 
-- **Phase 5 (Pokémon Showdown capstone), milestone-3 campaign COMPLETE** — from-scratch
-  self-play LEARNS on Showdown: finals 0.380 ± 0.009 pooled vs SimpleHeuristics (above the
-  pre-registered 0.20–0.35 band), 0.484 head-to-head vs the equal-budget fixed-bot parent,
-  without ever seeing the eval bot. Everything approaches the same ~0.4 plateau; the plateau,
-  not the training distribution, binds. (Three 2026-08-01 SESSION_LOGS entries: run-3 design,
-  run-3 gates, run 3 complete.)
-- Milestone ladder: M1 (MaxBasePowerPlayer) PASSED 2026-07-29 · M2 (SimpleHeuristics, 0.5
-  bar) NOT passed — best 0.408 at 12M with [512,512], curve not flattened · M3 (self-play
-  pool) campaign complete; stop-rule decision for shipping it still OPEN.
-- **P4 COMPLETE 2026-08-02 — the plateau is TRAINING-SIDE.** The BC clone through the exact
-  capstone encoder + [512,512] trunk plays 0.453–0.465 vs SimpleHeuristics (R3 passed in both
-  batteries; +0.045–0.057 over the 0.408 RL best, above the 0.42 asymptote), so the encoder is
-  exonerated for the plateau. R2 closed partial (0.90, data still binding after the spent
-  doubling; curve extrapolates onto the audit's predicted ~0.97; capacity probe skipped as
-  uninterpretable — disclosed deviation). One-directional caveat stands: representable and
-  supervised-learnable ≠ PPO-reachable under terminal-only reward. The passing clone is a
-  warm-start candidate above the RL best — a ladder decision, NOT taken. (Two 2026-08-02
-  entries: pre-registration + verdict; locked spec in PLAN.md Phase 5.)
-- Git: 2 commits ahead of origin (P4 pre-registration, P4 verdict). Standing rule: ask the
-  maintainer before any push.
+- **Milestone-3 write-up SHIPPED**: README has the Phase-5 results section (milestones 1–3
+  + the cloning diagnostic) with a house-style figure; every number verified
+  programmatically against run artifacts; three-Opus review pass folded in. The arc as
+  shipped: fixed-bot / warm-started / from-scratch arms all converge on ~0.4 vs
+  SimpleHeuristics, and the BC clone at 0.453 through the same stack locates the plateau
+  training-side (one-directional caveat attached; the clone's R2 fit gate miss disclosed).
+- **Stop rule ADOPTED (this session, reviewer-backed — maintainer ratifies before push):**
+  (1) M3 ships now; (2) P3 = post-ship analysis appendix, P5 = real training probe needing
+  its own pre-registration (entropy probe queued same tier); (3) the 0.5 bar stops being
+  chased under this recipe class — bar stays unmet and unmoved; 16×-budget from-scratch is
+  untested-not-excluded, deferred on cost; (4) BC-warm-start deferred to its own
+  pre-registered design session. Full wording in the 2026-08-02 write-up log entry.
+- Milestone ladder: M1 PASSED 0.663 · M2 NOT passed (best 0.408 n=1; 0.432 pooled reads as
+  specialization) · M3 complete and shipped.
+- Git: 4 commits ahead of origin after this session (P4 pre-reg, P4 verdict, write-up,
+  docs). Standing rule: ask the maintainer before any push — and the push now publishes
+  the milestone-3 section.
 
 ## Next, in order
 
-1. **Milestone-3 write-up (README section) + stop-rule decision**, now with P4's answer in
-   hand: the three-arm arc plus "the plateau is training-side, demonstrated" — keep the 0.5
-   bar unmoved, cross-play co-reported, the bar's date attached. Force the stop rule here.
-2. P3 (team-luck variance decomposition, ~20 min) and P5 (rollout_steps 512 — the config's
-   only true SNR knob) queued behind; the BC-warm-start question joins the ladder-design
-   queue (flagged in the P4 spec, not decided).
+1. **Maintainer**: review the shipped README section + ratify (or amend) the stop rule;
+   decide on push.
+2. P3 team-luck variance decomposition (~20 min, analysis appendix).
+3. P5 rollout_steps 512 — write the pre-registration first (read, band, and what result
+   would amend the shipped section), then run.
+4. Next-chapter design session when wanted: BC-warm-start from the clone, pre-registered
+   meaning first.
 
 ## Watch items
 
-- s0 late regression is real (last-2M eval dip 0.395→0.365; cross-play 0.434 vs sp6m) —
-  Phase-4 "best rung ≠ final" recurring on 1 of 3 seeds; a write-up caveat, not a defect.
-- Pre-existing test failure: `test_full_episode_contract_against_live_server` fails only when
-  the whole suite runs with a server up; passes when its file runs alone. Reproduced on an
-  unmodified tree (2026-08-01 P4 entry).
+- s0 late regression (0.396→0.365 last 2M; weak seed in cross-play) — now disclosed in the
+  shipped section; keep an eye on recurrence in any future run.
+- Pre-existing test flake: `test_full_episode_contract_against_live_server` fails only when
+  the whole suite runs with a server up; passes alone (2026-08-01).
+- poke-env 0.15.0 upstream bug (SH setup branch dead: int enum vs string) — shipped as a
+  README finding; an upstream report is still unfiled.
+- `data/bc_p4_{main,sub10k,40k}.npz` ≈ 3.9 GB, gitignored — deletable; regeneration ~10 min
+  via `scripts/make_bc_dataset.py`.
 
 ## Operational
 
 - Server: `cd showdown && node pokemon-showdown start --no-security`
 - wandb defaults to offline as of `e53323a` (an explicit `WANDB_MODE` still wins).
-- Stage-0 pattern for concurrent seeds; ≥5-min runs in the maintainer's terminal; steps/s
-  from meta.yaml → checkpoint.pt mtimes; clean tree at every launch; commit docs BEFORE
-  launches. Handed-over command sets go in bash scripts under the session tmp dir — long
-  single-line chains mangle on paste (measured 2026-08-01).
-- Throughput: from-scratch 3-wide 568–575 steps/s shakeout, ~546 effective over 12M with
-  evals.
-- Run artifacts: `runs/showdown_scratch12m_s{0,1,2}/` (finals, xplay JSONs, offline
-  histories); parent cells `runs/showdown_{sp6m,cont6m}_s*/`, `runs/showdown_heur_512_s0/`.
+- `runs/*/history.csv` (gitignored) now exist for heur_512, heur_6m, scratch12m ×3 — the
+  figure script reads them; regenerate via `scripts/extract_history.py`.
+- Stage-0 pattern for concurrent seeds; ≥5-min runs in the maintainer's terminal; clean
+  tree at every launch; commit docs BEFORE launches. Handed-over command sets go in bash
+  scripts under the session tmp dir.
+- Run artifacts: `runs/showdown_scratch12m_s{0,1,2}/`, parents
+  `runs/showdown_{sp6m,cont6m}_s*/`, `runs/showdown_heur_512_s0/`, clones
+  `runs/bc_p4_512{,_40k}_s{0,1,2}/`.
