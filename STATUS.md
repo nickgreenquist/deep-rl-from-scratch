@@ -4,7 +4,7 @@ Current-state board. Rewritten in place (never appended) as work lands — updat
 same commit that appends a `SESSION_LOGS.md` entry; hard cap ~80 lines. If this file
 conflicts with the newest session-log entry, the log wins — say so and fix this file.
 
-## Where we are (updated 2026-08-01)
+## Where we are (updated 2026-08-02)
 
 - **Phase 5 (Pokémon Showdown capstone), milestone-3 campaign COMPLETE** — from-scratch
   self-play LEARNS on Showdown: finals 0.380 ± 0.009 pooled vs SimpleHeuristics (above the
@@ -15,19 +15,21 @@ conflicts with the newest session-log entry, the log wins — say so and fix thi
 - Milestone ladder: M1 (MaxBasePowerPlayer) PASSED 2026-07-29 · M2 (SimpleHeuristics, 0.5
   bar) NOT passed — best 0.408 at 12M with [512,512], curve not flattened · M3 (self-play
   pool) campaign complete; stop-rule decision for shipping it still OPEN.
-- P4 machinery (BC-clone encoder-ceiling instrument) built, smoke-tested end to end, priced:
-  the whole diagnostic runs in-session in minutes (collection 2,825 decisions/s, ~0.7 s/epoch
-  at 40k rows × [512,512], 1,000-battle re-eval ~50 s). Pre-registration deliberately NOT yet
-  taken. (2026-08-01 P4 entry.)
-- Git: in sync with origin as of the 2026-08-01 push (docs restructure + BC-instrument
-  commits). Standing rule: ask the maintainer before any future push.
+- **P4 PRE-REGISTERED 2026-08-02** (locked spec: PLAN.md Phase 5 § "P4 — encoder-ceiling BC
+  diagnostic"; evidence: 2026-08-02 log entry). The design pass's feature audit reframed it:
+  SimpleHeuristics is a near-closed-form function of encoded features (its setup branch is
+  dead code upstream — enum-vs-str bug, poke-env 0.15.0), label noise = 0, so a FAIL indicts
+  trunk/optimization or BC drift, never encoder information; a verified clone at b ≈ 0.49 puts
+  the 0.42 plateau ~7 points below a representable, supervised-learnable policy.
+- Git: 1 commit ahead of origin (P4 pre-registration). Standing rule: ask the maintainer
+  before any push.
 
 ## Next, in order
 
-1. **P4 — encoder-ceiling BC diagnostic:** pre-register the read, then run (clone
-   SimpleHeuristics from (obs, bot_action) pairs through the same 611-dim encoder +
-   [512,512]). Decisive if it FAILS (plateau explained, encoder must change); one-directional
-   if it passes — carry that caveat into the pre-registration.
+1. **P4 — RUN IT:** run script handed over (~25 min, maintainer's terminal, server on :8000);
+   reads R0–R4 taken in-session from the artifacts per the locked spec. Note the old
+   "decisive if it FAILS" framing is retired — the audit forecloses the encoder-information
+   reading of a fail (see the spec).
 2. **Milestone-3 write-up (README section):** the three-arm arc is fully pre-registered; keep
    the 0.5 bar unmoved, cross-play co-reported, the bar's date attached. Force the stop-rule
    decision here.

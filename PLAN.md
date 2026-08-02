@@ -227,6 +227,82 @@ Corpus accumulation is bursty and partly tournament-sourced — stratify by rati
 questions (schema drift across years, possible end-of-battle full-team reveal per the approved 2019
 full-info-replays thread, exact primary-source count) live in the 2026-07-30 session-log entry.
 
+### P4 — encoder-ceiling BC diagnostic (pre-registered 2026-08-02; instrument landed 2026-08-01)
+
+**Question.** Is the ~0.4 plateau vs SimpleHeuristics below what the 611-dim encoder + [512,512]
+trunk provably supports? A feature audit of SimpleHeuristicsPlayer's source (2026-08-02 session-log
+entry) answers the information half analytically; the run verifies it end to end and adds the
+learnability half. Diagnostic outside the milestone ladder (Phase-4 contamination framing): the
+clone never touches a pool, a tournament, or a milestone number.
+
+**The audit, in one paragraph (evidence gathered before the bands were set — that is its job).**
+SH's realized gen1 policy is a near-closed-form function of encoded features. Forced switches
+(measured 20.5% of decision rows) are argmax `_estimate_matchup`, whose four terms — both
+directional type multipliers, spe base-stat comparison, both hp fractions — are literal per-mon
+encoder features, with ties broken by team order, which is slot order, which is encoded. Move choice
+is argmax of bp × STAB × stat-ratio × accuracy × expected_hits × type multiplier — every factor
+encoded except `expected_hits` (multi-hit moves; exposed on 1.8% of move rows, chosen on 0.29%).
+**SH's setup-move branch is dead code upstream**: poke-env 0.15.0 compares `move.target` (int enum
+`Target.SELF`) to the string `"self"`, always False — confirmed analytically (the verbatim predicate
+matches zero gen1 moves) and empirically (status-clicked-while-damage-available 4/7,140, all
+explained by immunity zeroing every damage score and the tie resolving to slot 0). Hazard, dynamax
+and tera branches are dead in gen1. The stochastic fallback (`active is None`) never fires: 0
+label disagreements in 8,943 triple-called live decisions, both actives present on every row —
+**label noise ≈ 0**. Two consequences shape the bands: (1) a low-agreement FAIL cannot indict the
+encoder's information content — the audit forecloses that reading; it would indict the trunk or the
+optimization (itself a finding: if supervised SGD cannot fit a near-closed-form target on this
+trunk, PPO never had a chance) or the BC method (compounding drift). (2) The existence proof
+sharpens: a faithful clone scores the mirror baseline b ≈ 0.49 vs SH (measured 0.485 at n=2,000,
+0.492 at n=400), and 0.49 > 0.42, the re-analysis's plateau asymptote. Side fact for the record: the
+dead branch means SimpleHeuristicsPlayer is weaker than nominal in every poke-env 0.15.0 stack —
+purely internal comparability for us (every milestone number used this same SH), possibly worth an
+upstream report.
+
+**Arms.** Primary: 20k SH-vs-SH battles (~450k decisions, ~3 min at the measured 2,825 decisions/s)
+via `scripts/make_bc_dataset.py`, then `scripts/train_bc.py` at [512,512], 40 epochs, seeds 0/1/2
+(one dataset, three fit seeds — init + battle-split + shuffle; collection noise is not the binding
+term). Data check: one 10k-battle-subset fit (seed 0; the subset excludes the primary seed-0 val
+battles, so both checkpoints score on the common val set). Conditional, built/run only if
+triggered: a [1024,1024] capacity probe (R2 partial/fail) and one DAgger round — clone-visited
+states relabeled by SH, refit, re-eval (R3 drift branch). Baseline b = the recorder's win rate over
+the 20k collection battles themselves (n=20k, se 0.0035, ties count as non-wins — free from the
+collection run).
+
+**Reads, in order (locked):**
+
+- **R0 — collection sanity:** b ∈ [0.45, 0.55]; ~22–23 decisions/battle; forced-switch share
+  0.20 ± 0.05 (probe cross-check). Outside → HOLD interpretation.
+- **R1 — fit health:** 3-seed val free-agreement spread ≤ 0.02 (multi-choice rows — decisions with
+  >1 legal action; the uniform-over-legal floor is ~0.19); 20k-vs-10k common-val Δ < 0.01 = data
+  non-binding (if ≥ 0.01: one pre-authorized doubling to 40k battles, nothing else changes).
+- **R2 — agreement (fit gate, NOT the verdict):** val free-agreement ≥ 0.93 → audit verified
+  (prediction ~0.97 given the enumerated residues). 0.90–0.93 → partial: capacity probe + R4 before
+  any claim. < 0.90 → fit failure; explicitly not an encoder-information indictment (see audit);
+  capacity probe, then investigate.
+- **R3 — win rate (headline):** best-val checkpoint, deterministic, 1,000 battles/seed through
+  `scripts/eval_checkpoint.py` (same seed rung as the campaign finals), pooled 3,000 (se 0.009)
+  against b. **≥ b − 0.04** (≈3σ, and it absorbs the battle_against-vs-SingleAgentWrapper instrument
+  mismatch we did not calibrate) → verdict: the architecture supports ≥ ~0.49 vs SH, so the
+  0.408/0.42 plateau sits ≥ 7 points below a representable, supervised-learnable policy ⇒ **the
+  plateau is training-side** (signal / distribution / optimization), not representational. The
+  one-directional caveat attaches: nothing here shows PPO can REACH that policy under terminal-only
+  reward — the claim is about where the ceiling is not. **< b − 0.04 with R2 passed** → compounding
+  drift or strategically concentrated errors: run the DAgger round; closes → BC-method artifact,
+  verdict as above; does not close → R4 names the sites — concentrated on expected_hits/status rows
+  ⇒ a real-but-priced encoder gap (move identity; confirms the embedding follow-up), diffuse ⇒
+  unaudited gap, back to a design session. **< b − 0.04 with R2 < 0.90** → no plateau verdict until
+  the fit failure is understood.
+- **R4 — disagreement concentration (always run; in-session analysis, no script changes):** val
+  disagreements tabulated over {multi-hit-exposed, all-status-moves, forced-switch,
+  switch-out-trigger, rest}. The audit predicts the first bucket dominates any shortfall.
+
+**Contamination disclosed:** the machinery smoke saw 0.756 free-agreement at 3 epochs / 40k rows
+(still climbing); the probe stats (b, forced share, branch deadness) were gathered in the design
+pass — they are audit evidence the bands were deliberately set on. **Non-goals:** no value labels
+(the collector records no outcomes; re-collection is 3 min if that ever changes); no cross-play vs
+RL checkpoints. A passing clone is also a warm-start candidate above the RL best (0.49 > 0.408) —
+flagged as a separate milestone-ladder decision, explicitly not taken here.
+
 ### Self-play priors carried from Phase 4 (verbatim)
 
 - **~50% is the EQUILIBRIUM of self-play, not a failure.** With a randomized first player, a policy

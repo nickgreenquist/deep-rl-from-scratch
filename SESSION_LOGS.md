@@ -1243,6 +1243,46 @@ order; earlier phases follow below.
   Session boot ~30–40k → ~4k tokens; a `self-play` grep of this file 79 KB → 5 KB. Commits
   `8be35e4`/`6c7c9b8`/`793f9bf` + this entry; 316 tests green throughout. HANDOFF.md ritual
   unchanged.
+- 2026-08-02 (P4 pre-registered — and the design pass's feature audit changes what the diagnostic
+  IS: SimpleHeuristics is a near-closed-form function of encoded features, its setup branch is dead
+  code upstream, and a FAIL can no longer indict the encoder's information content) — **The locked
+  spec is in PLAN.md (Phase 5, "P4 — encoder-ceiling BC diagnostic"); this entry records the
+  evidence and the reframing.** *Audit of SimpleHeuristicsPlayer source (poke-env 0.15.0), every
+  claim probed live*: (1) forced switches — measured 20.5% of decision rows over 8,943 live
+  decisions — are argmax `_estimate_matchup`, whose four terms (both directional type multipliers,
+  spe base comparison, both hp fractions) are LITERAL per-mon encoder features, ties resolved by
+  team order = slot order = encoded; (2) move choice is argmax bp x STAB x stat-ratio x acc x
+  expected_hits x multiplier — every factor encoded except `expected_hits` (multi-hit; exposed 1.8%
+  of move rows, chosen 0.29%); (3) **the setup-move branch never fires: `move.target == "self"`
+  compares the int enum `Target.SELF` to a string — always False.** Confirmed two ways: SH's
+  verbatim predicate matches ZERO gen1 moves, and live status-clicked-while-damage-available is
+  4/7,140, all explained by immunity zeroing every damage score and the 0-0 tie resolving to slot
+  order. So in our stack SH is a pure damage-maximizer + matchup-switcher — weaker than nominal in
+  EVERY poke-env 0.15.0 deployment (internal comparability unaffected: every milestone number used
+  this same SH; possibly worth an upstream report); (4) the stochastic fallback (`active is None`)
+  never fires — 0 label disagreements in 8,943 triple-called decisions, both actives present on
+  every recorded row — **label-noise floor = 0**; (5) hazard/dynamax/tera branches dead in gen1; spd
+  base stat derivable (mirrors spa for all real gen1 species; the apparent counterexamples were
+  mega/hisui/gmax formes sharing dex numbers). *The reframing, which corrects the handoff's
+  "decisive if it FAILS" line*: the audit proves the encoder's information sufficiency for SH
+  analytically — SH's score is writable as an arithmetic circuit over encoded features up to the
+  expected_hits residue — so a low-agreement fail indicts the TRUNK/optimization (if supervised SGD
+  can't fit a near-closed-form target, PPO never had a chance) or the BC method (drift), never the
+  encoder's information content. And the existence proof sharpens: a faithful clone scores the
+  mirror baseline b ~= 0.49 (measured 0.485 n=2,000, 0.492 n=400) > 0.42, the re-analysis's plateau
+  asymptote — so if the run verifies the audit, the RL plateau sits ~7 points below a policy that is
+  not merely representable but SUPERVISED-LEARNABLE on this exact trunk, and the plateau is
+  training-side with a mechanism demonstration. *Bands locked* (R0 collection sanity / R1 fit health
+  incl. a 20k-vs-10k data check on a common val set / R2 agreement >= 0.93 as fit gate, prediction
+  ~0.97 / R3 headline: pooled 3x1,000 best-ckpt deterministic vs b, pass at >= b - 0.04 (~3 sigma,
+  absorbs the battle_against-vs-SingleAgentWrapper instrument mismatch; maintainer approved the
+  recommended margin) / R4 disagreement-concentration always run). Conditional arms pre-authorized
+  but built only if triggered: [1024,1024] capacity probe, one DAgger round, one doubling to 40k
+  battles. Contamination disclosed in the spec (smoke 0.756@3ep; probe stats are audit evidence the
+  bands were set on). A passing clone doubles as a warm-start candidate above the RL best (0.49 >
+  0.408) — flagged in the spec as a ladder decision NOT taken. *Next*: run script handed over (~25
+  min, maintainer's terminal, server up); reads in-session from the artifacts; then the milestone-3
+  write-up + stop rule with P4's answer in hand.
 
 - 2026-07-21 — Repo scaffolded: structure, README, CLAUDE.md, `.gitignore`, pinned `pyproject.toml`.
   Initial commit.
