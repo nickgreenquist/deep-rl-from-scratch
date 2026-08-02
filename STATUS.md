@@ -15,26 +15,26 @@ conflicts with the newest session-log entry, the log wins — say so and fix thi
 - Milestone ladder: M1 (MaxBasePowerPlayer) PASSED 2026-07-29 · M2 (SimpleHeuristics, 0.5
   bar) NOT passed — best 0.408 at 12M with [512,512], curve not flattened · M3 (self-play
   pool) campaign complete; stop-rule decision for shipping it still OPEN.
-- **P4 PRE-REGISTERED 2026-08-02** (locked spec: PLAN.md Phase 5 § "P4 — encoder-ceiling BC
-  diagnostic"; evidence: 2026-08-02 log entry). The design pass's feature audit reframed it:
-  SimpleHeuristics is a near-closed-form function of encoded features (its setup branch is
-  dead code upstream — enum-vs-str bug, poke-env 0.15.0), label noise = 0, so a FAIL indicts
-  trunk/optimization or BC drift, never encoder information; a verified clone at b ≈ 0.49 puts
-  the 0.42 plateau ~7 points below a representable, supervised-learnable policy.
-- Git: 1 commit ahead of origin (P4 pre-registration). Standing rule: ask the maintainer
-  before any push.
+- **P4 COMPLETE 2026-08-02 — the plateau is TRAINING-SIDE.** The BC clone through the exact
+  capstone encoder + [512,512] trunk plays 0.453–0.465 vs SimpleHeuristics (R3 passed in both
+  batteries; +0.045–0.057 over the 0.408 RL best, above the 0.42 asymptote), so the encoder is
+  exonerated for the plateau. R2 closed partial (0.90, data still binding after the spent
+  doubling; curve extrapolates onto the audit's predicted ~0.97; capacity probe skipped as
+  uninterpretable — disclosed deviation). One-directional caveat stands: representable and
+  supervised-learnable ≠ PPO-reachable under terminal-only reward. The passing clone is a
+  warm-start candidate above the RL best — a ladder decision, NOT taken. (Two 2026-08-02
+  entries: pre-registration + verdict; locked spec in PLAN.md Phase 5.)
+- Git: 2 commits ahead of origin (P4 pre-registration, P4 verdict). Standing rule: ask the
+  maintainer before any push.
 
 ## Next, in order
 
-1. **P4 — RUN IT:** run script handed over (~25 min, maintainer's terminal, server on :8000);
-   reads R0–R4 taken in-session from the artifacts per the locked spec. Note the old
-   "decisive if it FAILS" framing is retired — the audit forecloses the encoder-information
-   reading of a fail (see the spec).
-2. **Milestone-3 write-up (README section):** the three-arm arc is fully pre-registered; keep
-   the 0.5 bar unmoved, cross-play co-reported, the bar's date attached. Force the stop-rule
-   decision here.
-3. P3 (team-luck variance decomposition, ~20 min) and P5 (rollout_steps 512 — the config's
-   only true SNR knob) queued behind.
+1. **Milestone-3 write-up (README section) + stop-rule decision**, now with P4's answer in
+   hand: the three-arm arc plus "the plateau is training-side, demonstrated" — keep the 0.5
+   bar unmoved, cross-play co-reported, the bar's date attached. Force the stop rule here.
+2. P3 (team-luck variance decomposition, ~20 min) and P5 (rollout_steps 512 — the config's
+   only true SNR knob) queued behind; the BC-warm-start question joins the ladder-design
+   queue (flagged in the P4 spec, not decided).
 
 ## Watch items
 

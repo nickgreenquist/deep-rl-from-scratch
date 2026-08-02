@@ -1283,6 +1283,43 @@ order; earlier phases follow below.
   0.408) — flagged in the spec as a ladder decision NOT taken. *Next*: run script handed over (~25
   min, maintainer's terminal, server up); reads in-session from the artifacts; then the milestone-3
   write-up + stop rule with P4's answer in hand.
+- 2026-08-02 (P4 COMPLETE: the plateau is training-side — the clone through the exact capstone
+  encoder + trunk plays 0.453-0.465 vs SimpleHeuristics, +0.045-0.057 above the RL best,
+  demonstrated twice; R2 closes partial with the data curve extrapolating onto the audit's predicted
+  ceiling) — **Both batteries ran to completion in the maintainer's terminal (20k battles/450,864
+  decisions, then the R1-triggered pre-authorized doubling: fresh 40k/903,090 at 2,769 decisions/s);
+  every read taken in the locked order; 40k is the battery of record.** R0 PASSED both times (b =
+  0.489 n=20k / 0.486 n=40k; 22.5-22.6 decisions/battle; forced-switch share 0.2034 vs the probe's
+  0.205). R1: seed spreads 0.0049/0.0060 pass; the data gate FIRED at 20k (common-val 20k-vs-10k
+  delta 0.0271) and data is STILL binding at 40k (fresh-common-ground delta 0.0212, both
+  generations' s0 checkpoints scored on the 40k val battles neither saw) — the one pre-authorized
+  doubling is spent, and the shrinking slope (+0.027 to +0.021/doubling, ratio 0.78) geometrically
+  extrapolates to ~0.97, exactly the audit's predicted ceiling. R2 PARTIAL: best val free-agreement
+  0.9017/0.8987/0.9047 (best epochs 9/14/10 of 40; train free-agreement 0.951 at best-epoch, same as
+  the 20k generation's 0.954). **Disclosed deviation from the locked spec: the partial-band capacity
+  probe was NOT run** — it was pre-registered to discriminate capacity-from-information when
+  agreement CAPS, and agreement is not capping (still-climbing data curve, extrapolation
+  on-prediction); under a binding data constraint its read is uninterpretable, so R2 closes as
+  partial-trajectory-consistent rather than verified. R3 PASSED TWICE (the headline): 40k battery
+  0.451/0.454/0.454, pooled 1359/3000 = 0.4530 >= 0.446 (b - 0.04); 20k battery independently
+  0.478/0.445/0.473, pooled 0.4653 >= 0.449; combined 2755/6000 = 0.4592; the between-battery
+  difference is 0.96 sigma - noise. The clone pays a real ~0.03 cloning tax vs b (~4 sigma on the
+  combined read), inside the pre-registered margin. R4 DIFFUSE both generations, sharper at 40k:
+  rest-bucket 67.5% of disagreements at 78.1% share; all-status agreement 1.000 (the slot-order tie
+  rule fully learned — a clean audit confirmation); multi-hit-exposed only 2.1% of disagreements
+  (the one true encoder residue is immaterial); the two weakest buckets — forced-switch 0.866 (up
+  from 0.846 at 20k) and voluntary-switch-label 0.556 — are both boundary sharpness on the
+  analytically-covered matchup argmax near ties, i.e. generalization, not missing information.
+  **VERDICT (pre-registered R3 pass branch): the ~0.4 plateau sits below a representable,
+  supervised-learnable policy on this exact stack — a measured 0.453-0.465 vs the eval bot,
+  +0.045-0.057 over the 0.408 RL best and above the 0.42 asymptote — so the plateau is TRAINING-SIDE
+  (signal/distribution/optimization), and the encoder is exonerated for it; the one-directional
+  caveat stands (nothing here shows PPO can REACH that policy under terminal-only reward).** The
+  passing clone doubles as a warm-start candidate above the RL best — still flagged as a
+  milestone-ladder decision NOT taken. Artifacts: data/bc_p4_{main,sub10k,40k}.npz;
+  runs/bc_p4_512_{s0,s1,s2,sub10k}/ and runs/bc_p4_512_40k_s{0,1,2}/ (bc_metrics.json +
+  p4_eval_heur_1000.json each). *Next*: milestone-3 write-up + stop-rule decision, with P4's answer
+  in hand; P3/P5 behind it.
 
 - 2026-07-21 — Repo scaffolded: structure, README, CLAUDE.md, `.gitignore`, pinned `pyproject.toml`.
   Initial commit.
