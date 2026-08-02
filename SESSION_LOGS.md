@@ -1236,6 +1236,14 @@ order; earlier phases follow below.
   a mutation battery is warranted. *Next*: design/pre-registration pass, then the milestone-3
   write-up + stop-rule decision.
 
+- 2026-08-01 (docs restructure — context cost) — **PLAN.md split: Phases 0–4 moved verbatim to
+  `PLAN_ARCHIVE.md` (cmp-verified byte-identical); `STATUS.md` added as the always-read state
+  board; CLAUDE.md repointed (HANDOFF→STATUS boot, tiered on-demand reads); the three big docs
+  reflowed to 100 cols (whitespace-normalized-identical); `doc-archaeologist` subagent added.**
+  Session boot ~30–40k → ~4k tokens; a `self-play` grep of this file 79 KB → 5 KB. Commits
+  `8be35e4`/`6c7c9b8`/`793f9bf` + this entry; 316 tests green throughout. HANDOFF.md ritual
+  unchanged.
+
 - 2026-07-21 — Repo scaffolded: structure, README, CLAUDE.md, `.gitignore`, pinned `pyproject.toml`.
   Initial commit.
 - 2026-07-22 — Pushed to GitHub. Created `deep-rl` conda env; installed pinned deps and smoke-tested

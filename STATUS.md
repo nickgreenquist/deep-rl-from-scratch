@@ -19,7 +19,8 @@ conflicts with the newest session-log entry, the log wins — say so and fix thi
   the whole diagnostic runs in-session in minutes (collection 2,825 decisions/s, ~0.7 s/epoch
   at 40k rows × [512,512], 1,000-battle re-eval ~50 s). Pre-registration deliberately NOT yet
   taken. (2026-08-01 P4 entry.)
-- Git: local is ahead of origin — ask the maintainer before pushing.
+- Git: in sync with origin as of the 2026-08-01 push (docs restructure + BC-instrument
+  commits). Standing rule: ask the maintainer before any future push.
 
 ## Next, in order
 
