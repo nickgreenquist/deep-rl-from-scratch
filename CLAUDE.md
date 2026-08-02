@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-Guide for Claude Code sessions on this repo. Read `PLAN.md` at session start for current status and next steps.
+Guide for Claude Code sessions on this repo. At session start read `HANDOFF.md` if non-empty, then `STATUS.md` — that is the only mandatory read; everything else is on demand per "Plan and status" below.
 
 ## What this project is
 
@@ -37,11 +37,15 @@ From-scratch deep RL in PyTorch, built as a portfolio piece over multiple months
 
 ## Plan and status
 
-`PLAN.md` (repo root) is the living working doc — per-phase definitions of done (checkboxes = current status) and open decisions. Update it as work lands.
+Session start, in this order — stop as soon as you can act:
 
-`SESSION_LOGS.md` holds the dated session-log entries (findings, decisions, run records). Append an entry there as work lands. Read it SELECTIVELY — grep a date, phase, or finding — never whole; it is large by design.
+1. `HANDOFF.md` — only if non-empty (mid-handoff). A continuation note for a session resuming after a context clear: read it, fold anything durable into STATUS.md / SESSION_LOGS.md, restore the empty stub. Written only when the maintainer explicitly asks for a handoff. Nothing persists there.
+2. `STATUS.md` — always. Current phase/milestone, last verdict with numbers, next actions in order, watch items, operational commands. Rewritten in place (never appended), hard cap ~80 lines; update it in the same commit that appends a session-log entry. If it conflicts with the newest session-log entry, the log wins — say so and fix STATUS.md.
+3. `PLAN.md` — the live spec: benchmark protocol, per-phase digests of completed work ("Built" / "What still binds"), and the full Phase 5 spec. Read the Phase 5 section when doing capstone design work. Update it as design decisions land. Never read any doc whole "for context."
+4. `SESSION_LOGS.md` — dated entries (findings, decisions, run records); append as work lands. Access pattern: `grep -n '^- 20' SESSION_LOGS.md` for the index of entry titles, then Read the chosen entry by offset/limit. Never a broad keyword grep — a term like "self-play" returns tens of KB.
+5. `PLAN_ARCHIVE.md` — Phases 0–4 locked specs, moved verbatim, frozen. Grep it when touching that phase's code or before re-opening any locked decision; never read whole. Any "see PLAN.md" reference to a Phase 0–4 spec resolves here.
 
-`HANDOFF.md` is EMPTY except mid-handoff. Write it only when the maintainer explicitly asks for a handoff (they're about to clear context and hand back to a fresh session). The receiving session reads it, folds anything durable into PLAN.md / SESSION_LOGS.md, and restores the empty stub. Nothing persists there.
+History questions ("what did we decide / measure about X, and why?") go to the `doc-archaeologist` subagent, not to direct reads — its reads cost this session nothing, and it returns the decision with a verbatim quote, date, and file:line. Before proposing anything named in a "What still binds" line, read that phase's archived spec first: those decisions were paid for, and a summary is not grounds to re-open them.
 
 ## Working with the maintainer
 
@@ -58,58 +62,9 @@ From-scratch deep RL in PyTorch, built as a portfolio piece over multiple months
 
 ## Working style
 
-**Tradeoff:** These guidelines bias toward caution over speed. For trivial tasks, use judgment.
+**Tradeoff:** these guidelines bias toward caution over speed. For trivial tasks, use judgment.
 
-### 1. Think Before Coding
-
-**Don't assume. Don't hide confusion. Surface tradeoffs.**
-
-Before implementing:
-- State your assumptions explicitly. If uncertain, ask.
-- If multiple interpretations exist, present them - don't pick silently.
-- If a simpler approach exists, say so. Push back when warranted.
-- If something is unclear, stop. Name what's confusing. Ask.
-
-### 2. Simplicity First
-
-**Minimum code that solves the problem. Nothing speculative.**
-
-- No features beyond what was asked.
-- No abstractions for single-use code.
-- No "flexibility" or "configurability" that wasn't requested.
-- No error handling for impossible scenarios.
-- If you write 200 lines and it could be 50, rewrite it.
-
-Ask yourself: "Would a senior engineer say this is overcomplicated?" If yes, simplify.
-
-### 3. Surgical Changes
-
-**Touch only what you must. Clean up only your own mess.**
-
-When editing existing code:
-- Don't "improve" adjacent code, comments, or formatting.
-- Don't refactor things that aren't broken.
-- Match existing style, even if you'd do it differently.
-- If you notice unrelated dead code, mention it - don't delete it.
-
-When your changes create orphans:
-- Remove imports/variables/functions that YOUR changes made unused.
-- Don't remove pre-existing dead code unless asked.
-
-The test: Every changed line should trace directly to the user's request.
-
-### 4. Goal-Driven Execution
-
-**Define success criteria. Loop until verified.**
-
-Transform tasks into verifiable goals:
-- "Add validation" → "Write tests for invalid inputs, then make them pass"
-- "Fix the bug" → "Write a test that reproduces it, then make it pass"
-- "Refactor X" → "Ensure tests pass before and after"
-
-For multi-step tasks, state a brief plan:
-```
-1. [Step] → verify: [check]
-2. [Step] → verify: [check]
-3. [Step] → verify: [check]
-```
+- **Think before coding.** State assumptions explicitly; if multiple interpretations exist, present them — never pick silently. If something is unclear, stop, name it, ask. Say so when a simpler approach exists; push back when warranted.
+- **Simplicity first.** Minimum code that solves the problem: no unrequested features, no abstractions for single-use code, no speculative configurability, no error handling for impossible scenarios. If 200 lines could be 50, rewrite.
+- **Surgical changes.** Every changed line traces to the request. Don't refactor or "improve" adjacent code; match existing style. Remove orphans YOUR change created; mention pre-existing dead code, don't delete it.
+- **Goal-driven execution.** Turn tasks into verifiable goals ("fix the bug" → a test that reproduces it, then passes; "refactor" → tests green before and after). For multi-step work, state a brief step → verify plan and loop until verified.
