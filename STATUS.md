@@ -12,7 +12,7 @@ conflicts with the newest session-log entry, the log wins — say so and fix thi
   shipped: fixed-bot / warm-started / from-scratch arms all converge on ~0.4 vs
   SimpleHeuristics, and the BC clone at 0.453 through the same stack locates the plateau
   training-side (one-directional caveat attached; the clone's R2 fit gate miss disclosed).
-- **Stop rule ADOPTED (this session, reviewer-backed — maintainer ratifies before push):**
+- **Stop rule RATIFIED by the maintainer (2026-08-02 evening).** As adopted:
   (1) M3 ships now; (2) P3 = post-ship analysis appendix, P5 = real training probe needing
   its own pre-registration (entropy probe queued same tier); (3) the 0.5 bar stops being
   chased under this recipe class — bar stays unmet and unmoved; 16×-budget from-scratch is
@@ -24,15 +24,22 @@ conflicts with the newest session-log entry, the log wins — say so and fix thi
   docs). Standing rule: ask the maintainer before any push — and the push now publishes
   the milestone-3 section.
 
+- **Both write-up hardening steps taken (2026-08-02 later entry):** clone final-vs-best
+  asymmetry measured a non-issue (all 12 evals within noise; README parenthetical added);
+  `heur_512_s{1,2}` 12M replication PRE-REGISTERED and handed over for overnight — the
+  3-seed pooled replaces the n=1 0.408 in the wedge, retention rule locked (resolved iff
+  0.4530 − p_RL ≥ 2·se_diff ≈ 0.026).
+
 ## Next, in order
 
-1. **Maintainer**: review the shipped README section + ratify (or amend) the stop rule;
-   decide on push.
-2. P3 team-luck variance decomposition (~20 min, analysis appendix).
-3. P5 rollout_steps 512 — write the pre-registration first (read, band, and what result
-   would amend the shipped section), then run.
-4. Next-chapter design session when wanted: BC-warm-start from the clone, pre-registered
-   meaning first.
+1. **Overnight (maintainer's terminal): `heur512_seeds.sh`** — heur_512 s1+s2, 12M each
+   2-wide, finals included (~5–6 h). Needs server up + the already-clean tree.
+2. **Morning read**: pre-registered rule from the 2026-08-02 later entry; amend the README
+   wedge sentence + milestone table with the 3-seed number either way.
+3. Push decision (maintainer) — publishes the milestone-3 section.
+4. P3 team-luck variance decomposition (~20 min, analysis appendix).
+5. P5 rollout_steps 512 — pre-registration first, then run; BC-warm-start design session
+   behind it.
 
 ## Watch items
 

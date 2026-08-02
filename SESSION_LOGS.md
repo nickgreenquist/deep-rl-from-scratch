@@ -1365,6 +1365,33 @@ order; earlier phases follow below.
   to stub. *Next*: maintainer reviews the shipped section + ratifies the stop rule; push decision
   (3 commits ahead before this session's); then P3, and the P5 pre-registration.
 
+- 2026-08-02 (later: stop rule RATIFIED by the maintainer; the write-up's two hardening steps taken —
+  clone final-ckpt evals close the best-vs-final asymmetry as a measured non-issue, and the n=1 RL
+  wedge side gets a pre-registered 2-seed replication, handed over for overnight) — **Maintainer
+  ratified the stop rule and green-lit both reservations from the post-ship self-assessment.**
+  *Reservation 2 closed by measurement*: all six clones' FINAL checkpoints re-evaluated (1000
+  battles each, same harness; read rule stated before results: per-seed |final−best| within 2·se ⇒
+  non-issue). Result: 40k battery best→final 0.451/0.454/0.454 → 0.462/0.475/0.461 (pooled 0.4530 →
+  0.4660, z=1.0 — final slightly HIGHER); 20k battery 0.478/0.445/0.473 → 0.446/0.453/0.465 (pooled
+  0.4653 → 0.4547, z=0.8); every per-seed |z| ≤ 1.44, pooled deltas opposite in sign across
+  batteries. No selection effect; README disclosure gains the measured parenthetical. Artifacts:
+  runs/bc_p4_512{,_40k}_s{0,1,2}/p4_eval_final_heur_1000.json. R3-of-record stays the best-val read
+  per the locked spec. *Reservation 1 — PRE-REGISTERED before launch*: `showdown_heur_512_s{1,2}`,
+  the s0 config verbatim (12M, [512,512]), seeds 1/2, 2-wide concurrent, locked finals in the same
+  script (final ckpt_012000000, 1000 fresh battles, default seed rung). **Locked read: the 3-seed
+  pooled p_RL (n=3000) + seed spread REPLACES the n=1 0.408 in the README's wedge sentence and
+  milestone table regardless of direction. Verdict retention rule: the "clone above the RL best"
+  wedge stands as RESOLVED iff clone-40k pooled 0.4530 − p_RL ≥ 2·se_diff (se_diff ≈ 0.013, i.e.
+  p_RL ≤ ~0.427); 0 < gap < 2·se_diff ⇒ downgraded to "consistent but not resolvable at these n"
+  and the README amended to say so; p_RL ≥ 0.4530 ⇒ the wedge premise is FALSE as pooled and the
+  training-side section gets a correction, not a reframing. Curve shapes and rungs recorded, not
+  gated; the best-rung-≠-final watch continues; no gate on seed spread — it is the measurement.**
+  Prediction, recorded as such: mix512's seed-std was 0.008 and sp6m continuation's 0.031; where
+  fixed-bot 12M lands is genuinely open. Launch script `heur512_seeds.sh` in the session tmp dir,
+  handed over for the maintainer's overnight terminal; tree committed clean before handover. *Next
+  session*: the pre-registered read from disk, README amendment per the rule, then P3 and the P5
+  pre-registration.
+
 - 2026-07-21 — Repo scaffolded: structure, README, CLAUDE.md, `.gitignore`, pinned `pyproject.toml`.
   Initial commit.
 - 2026-07-22 — Pushed to GitHub. Created `deep-rl` conda env; installed pinned deps and smoke-tested

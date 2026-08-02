@@ -631,7 +631,10 @@ masking — on 40k SH-vs-SH battles, and evaluate it through the same
 1,000-battle harness. Two disclosed differences from the RL protocol: the
 clone reports its best-validation checkpoint, not final, and the collection
 instrument differs from the eval wrapper — the pre-registered pass margin
-was set to absorb both. The supervised fit gate was **not** met: best
+was set to absorb both. (The first was then measured to be a non-issue:
+final-checkpoint re-evals of all six clones match their best-checkpoint
+numbers within noise — pooled deltas +0.013 and −0.011 on the two
+batteries, every per-seed |z| < 1.5.) The supervised fit gate was **not** met: best
 validation agreement 0.899–0.905 across three fits against a ≥ 0.93 gate,
 with the fit data-bound, not capacity-bound — agreement still climbing per
 data doubling toward the audit's predicted ~0.97 — so the pre-registered
