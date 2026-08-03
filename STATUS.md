@@ -4,7 +4,7 @@ Current-state board. Rewritten in place (never appended) as work lands — updat
 same commit that appends a `SESSION_LOGS.md` entry; hard cap ~80 lines. If this file
 conflicts with the newest session-log entry, the log wins — say so and fix this file.
 
-## Where we are (updated 2026-08-02, evening)
+## Where we are (updated 2026-08-03)
 
 - **Milestone-3 write-up SHIPPED**: README has the Phase-5 results section (milestones 1–3
   + the cloning diagnostic) with a house-style figure; every number verified
@@ -21,8 +21,11 @@ conflicts with the newest session-log entry, the log wins — say so and fix thi
 - Milestone ladder: M1 PASSED 0.663 · M2 NOT passed (fixed-bot 12M pooled 0.417 ± 0.009,
   3 seeds, best seed 0.432; the 18M continuation's 0.432 reads as specialization) · M3
   complete and shipped.
-- Git: 6 commits ahead of origin. Standing rule: ask the maintainer before any push — and
-  the push now publishes the milestone-3 section.
+- Pushed through `17ae11b` 2026-08-03 (maintainer's go) — the milestone-3 section is
+  PUBLIC. Standing rule unchanged: ask before any future push.
+- **P3 COMPLETE (2026-08-03):** observable draw (own species + opp lead) explains ~4% of
+  outcome variance (CV R² 0.0375, p < 0.005 vs permutation null; lower bound) — real but
+  modest; "the draw decides it" not supported at species level. Log-only appendix.
 
 - **Both hardening steps CLOSED (2026-08-02 later + overnight entries):** clone
   final-vs-best measured a non-issue (12 evals, all within noise), and the heur_512
@@ -33,10 +36,11 @@ conflicts with the newest session-log entry, the log wins — say so and fix thi
 
 ## Next, in order
 
-1. Push decision (maintainer) — publishes the milestone-3 section.
-2. P3 team-luck variance decomposition (~20 min, analysis appendix).
-3. P5 rollout_steps 512 — pre-registration first, then run; BC-warm-start design session
-   behind it.
+1. **Maintainer's terminal: `r512_probe.sh`** — P5 rollout-length probe, 6M ×3 3-wide +
+   finals (~2.6 h). Pre-registered read in `configs/showdown_r512.yaml` header; control
+   already evaluated (pooled 0.3550 ± 0.0087; credited iff probe pooled ≥ 0.381).
+2. P5 read per the config header once artifacts land.
+3. BC-warm-start design session (next chapter's opener, pre-registered meaning first).
 
 ## Watch items
 

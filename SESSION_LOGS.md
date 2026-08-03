@@ -1417,6 +1417,34 @@ order; earlier phases follow below.
   *Next*: push decision (maintainer), P3 (~20 min analysis), P5 pre-registration, BC-warm-start
   design session behind them.
 
+- 2026-08-03 (pushed public; P3 COMPLETE — the observable draw prices at ~4% of outcome variance,
+  real but modest; P5 pre-registered with its matched control evaluated before launch) — **Origin
+  synced through `17ae11b` on the maintainer's go — the milestone-3 section is public.** *P3
+  (team-luck variance decomposition, `scripts/p3_team_luck.py`, diagnostic outside the ladder)*:
+  instrumented re-evals of the three heur_512 finals (1000 battles each, locked protocol ladder,
+  own-team species + opponent LEAD recorded per battle — the opponent's revealed team is
+  deliberately EXCLUDED as post-treatment: longer battles reveal more mons and would leak outcome;
+  interpretation guard stated in the script docstring: a Bernoulli mixture has unchanged block
+  variance, so team luck does not widen eval-mean se — the instrument prices the TRAINING signal).
+  Read: ridge linear-probability on own-multi-hot + lead-one-hot, per-checkpoint centering, 5-fold
+  CV R² maxed over a λ-grid against a permutation null running the identical procedure. **Result:
+  CV R² = 0.0375 on n=3000 / 146 species vs null median ≈ 0 (95th pct 0.0015, p < 0.005) — the
+  observable draw explains ~3.7–4% of per-battle outcome variance, a lower bound** (full opponent
+  team, movesets and in-battle rolls are unobserved). Coefficients face-valid: own Electabuzz
+  +0.098, Mewtwo +0.072, Abra/Alakazam +0.07 win-prob; Tangela/Parasect/Grimer ≈ −0.07. Fresh
+  win-rate sanity: 0.406/0.398/0.430, within noise of the finals. **Verdict: "the draw decides the
+  battle" is NOT supported at the species level — the training-signal noise floor is dominated by
+  in-battle stochasticity and play, not the draw per se** (Gen 1's crit/freeze RNG lives in the
+  residual, unseparated). Per the stop rule: log-only appendix, the shipped section is untouched.
+  *P5 pre-registered* (`configs/showdown_r512.yaml`, full read in the header): rollout_steps 128 →
+  512, one variable on the heur_512 recipe, 6M × 3 seeds. **Control evaluated BEFORE launch:
+  heur_512 ckpt_006000000 s0/s1/s2 → 324/390/351 per 1000, pooled 0.3550 ± 0.0087 — credited iff
+  the probe's pooled finals ≥ 0.381 (2·se_diff).** Side fact worth keeping: the 6M seed spread is
+  0.066 where the 12M spread was 0.024 — the seeds CONVERGE as they approach the plateau, which is
+  itself plateau-consistent behavior. Launch script `r512_probe.sh` in the session tmp dir (~2.6 h
+  3-wide, finals in-script); handed over. *Next*: the P5 read per the config header when the run
+  lands; then the BC-warm-start design session (the next chapter's opener).
+
 - 2026-07-21 — Repo scaffolded: structure, README, CLAUDE.md, `.gitignore`, pinned `pyproject.toml`.
   Initial commit.
 - 2026-07-22 — Pushed to GitHub. Created `deep-rl` conda env; installed pinned deps and smoke-tested
