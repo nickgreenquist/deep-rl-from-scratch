@@ -727,9 +727,16 @@ local Showdown server, no GPU. Every run directory is self-describing
 **Where this goes next.** Fixed-bot budget is spent (measured flat at
 [64,64], projected short at [512,512]) and every current-recipe self-play
 arm converges to the same place, so the next win rate costs a change of
-recipe, not more compute. Two cheap mechanism reads are queued — a
-team-luck variance decomposition, and a rollout-length probe that is a real
-training change and will be pre-registered as such. The genuinely new door
+recipe, not more compute. Both queued mechanism reads are now in.
+The team-luck decomposition prices the observable draw — own six species
+plus the opponent's lead — at ~4% of per-battle outcome variance (real, but
+the draw does not decide battles at the species level). The rollout-length
+probe was credited: quadrupling the PPO rollout at fixed budget — the
+config's one true signal-to-noise knob — lifted the 6M win rate from 0.355
+to 0.392 (3 seeds each side, pre-registered read, z = 3.0), reaching at
+half the budget roughly what the base recipe took 12M to reach; whether it
+moves the ~0.42 plateau itself, rather than the approach speed, is an open
+12M-extension decision. The genuinely new door
 is warm-starting PPO from the clone, which sits above every RL policy on
 this board — deliberately deferred: it changes what "from scratch" means
 for every number that follows, and deciding *in advance* what a 0.5 from a

@@ -23,9 +23,12 @@ conflicts with the newest session-log entry, the log wins — say so and fix thi
   complete and shipped.
 - Pushed through `17ae11b` 2026-08-03 (maintainer's go) — the milestone-3 section is
   PUBLIC. Standing rule unchanged: ask before any future push.
-- **P3 COMPLETE (2026-08-03):** observable draw (own species + opp lead) explains ~4% of
-  outcome variance (CV R² 0.0375, p < 0.005 vs permutation null; lower bound) — real but
-  modest; "the draw decides it" not supported at species level. Log-only appendix.
+- **P3 COMPLETE (2026-08-03):** observable draw explains ~4% of outcome variance (CV R²
+  0.0375, p < 0.005; lower bound) — the draw does not decide battles at species level.
+- **P5 CREDITED (2026-08-03):** rollout_steps 128→512 lifts the 6M win rate 0.355 → 0.392
+  pooled (z = 3.0, pre-registered; whole 4–6M band shifted, approx_kl halved). First
+  credited lever since capacity; at half the budget it nearly matches the base recipe's
+  12M value. README closing paragraph amended per the pre-stated condition.
 
 - **Both hardening steps CLOSED (2026-08-02 later + overnight entries):** clone
   final-vs-best measured a non-issue (12 evals, all within noise), and the heur_512
@@ -36,10 +39,11 @@ conflicts with the newest session-log entry, the log wins — say so and fix thi
 
 ## Next, in order
 
-1. **Maintainer's terminal: `r512_probe.sh`** — P5 rollout-length probe, 6M ×3 3-wide +
-   finals (~2.6 h). Pre-registered read in `configs/showdown_r512.yaml` header; control
-   already evaluated (pooled 0.3550 ± 0.0087; credited iff probe pooled ≥ 0.381).
-2. P5 read per the config header once artifacts land.
+1. **Maintainer decision:** 12M r512 extension (~5.2 h; would test whether the credited
+   SNR lever moves the ~0.42 plateau or only the approach speed — and a better base recipe
+   changes what the BC warm start grafts onto) vs straight to the BC-warm-start design
+   session. Extension needs its own pre-registration either way.
+2. Push decision — this session's commits (P3/P5 results, README amendment) are local.
 3. BC-warm-start design session (next chapter's opener, pre-registered meaning first).
 
 ## Watch items

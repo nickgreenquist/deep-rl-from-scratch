@@ -1445,6 +1445,31 @@ order; earlier phases follow below.
   3-wide, finals in-script); handed over. *Next*: the P5 read per the config header when the run
   lands; then the BC-warm-start design session (the next chapter's opener).
 
+- 2026-08-03 (P5 CREDITED — the first credited lever since capacity: rollout_steps 512 lifts the
+  6M win rate 0.355 → 0.392 at z = 3.0, and the whole curve moves, not the endpoint) — **The probe
+  ran clean in the maintainer's terminal (3-wide, ~587 steps/s, launched on the pre-registration
+  commit `be8050e` / `git_dirty: false`, ~2.9 h, finals in-script; 30-min monitoring loop, no
+  interventions). Every read per the locked header, in order.** R0 gates PASSED: late entropy
+  medians 0.293–0.298 (band [0.2, 1.0]); eval ties 1.8–2.5% (≤4%); throughput 587/685 = 86% of the
+  2-wide reference (within ~25%). **PRIMARY: per-seed 0.397/0.384/0.396, pooled 1177/3000 = 0.3923
+  ± 0.0089 vs the pre-launch control 0.3550 ± 0.0087 → Δ = +0.0373, se_diff 0.0125, z = 3.00 —
+  ABOVE the 0.381 credited line. CREDITED.** Secondaries (recorded): 4–6M rung bands
+  0.396/0.383/0.386 vs the baseline recipe's 0.346 same-band — the whole trajectory is shifted,
+  not a final-checkpoint artifact; late approx_kl medians 0.0055–0.0057 vs the baseline's ~0.013 —
+  the 4× batch moves less per update at fixed lr, as the header predicted; seed spread 0.013.
+  Headline reading, stated carefully: at HALF the budget the r512 recipe reaches 0.392, within
+  noise of the base recipe's 12M s0 final (0.408) and ~2.8 se below the 12M pooled 0.417 — a real
+  SNR effect on the APPROACH SPEED; whether it moves the ~0.42 plateau itself is exactly what the
+  6M probe cannot say (the base recipe was also still climbing at 6M). Per the pre-stated
+  amendment condition, the README "Where this goes next" paragraph gains the measured sentence for
+  both mechanism reads, and the **12M-extension decision OPENS (~5.2 h 3-wide, not taken here)**:
+  if a 12M r512 run cleared the 0.42 projection it would be the first recipe to move the plateau —
+  and it would interact with the BC-warm-start chapter (a better base recipe changes what the
+  warm start should be grafted onto). Maintainer decisions queued, in order: (1) 12M r512
+  extension vs straight to the BC-warm-start design session; (2) push (this session's commits are
+  local). Artifacts: runs/showdown_r512_s{0,1,2}/ (ckpt ladders, final_eval_heur_1000.json,
+  histories, offline wandb).
+
 - 2026-07-21 — Repo scaffolded: structure, README, CLAUDE.md, `.gitignore`, pinned `pyproject.toml`.
   Initial commit.
 - 2026-07-22 — Pushed to GitHub. Created `deep-rl` conda env; installed pinned deps and smoke-tested
