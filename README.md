@@ -48,7 +48,7 @@ python -m rl.train --config configs/<run>.yaml
 | 2 | PPO (GAE, clipped objective, entropy bonus, vectorized rollouts) | **done, both tracks** — beats DQN on 3 of 5 MinAtar games; reproduces the reference on MuJoCo locomotion (see Results) |
 | 3 | SAC (twin critics, reparameterized actor, auto-tuned entropy temperature) | **done** — beats PPO on all three MuJoCo envs per sample and loses to it per minute; validated against published SAC (see Results) |
 | 4 | Connect 4 self-play on-ramp: opponent pool, checkpoint Elo harness | **done** — naive self-play forgets (no proxy overlap vs the pool arm), measured on an exact-oracle instrument stack (see Results) |
-| 5 | Capstone: Pokémon Showdown Gen 1 via PPO + self-play | **in progress** — milestone 1 passed; milestone 2 (0.5 vs SimpleHeuristics) not passed, best 0.408; milestone-3 self-play campaign complete, and the ~0.4 plateau is shown to be training-side (see Results) |
+| 5 | Capstone: Pokémon Showdown Gen 1 via PPO + self-play | **in progress** — milestone 1 passed; milestone 2 (0.5 vs SimpleHeuristics) not passed, best 0.417 pooled over 3 seeds; milestone-3 self-play campaign complete, and the ~0.4 plateau is shown to be training-side (see Results) |
 
 ## Results — Phase 1: DQN on MinAtar
 
@@ -550,16 +550,17 @@ eval seeds disjoint from training's, deterministic policy, ties counted as
 non-wins. Throughout this section ± is one standard error of a battle-level
 proportion unless labelled otherwise; "pooled" is wins/total over all seeds'
 battles and carries no seed variance, so seed spread is quoted where a claim
-lives at the seed level. Milestone 1–2 headline numbers are single-seed;
-every milestone-3 number is 3-seed.
+lives at the seed level. The milestone-1 headline is single-seed; every
+other headline number is 3-seed (the fixed-bot 12M cell was replicated to
+3 seeds on 2026-08-02 under a pre-registered read).
 
 | Milestone | Result | Status |
 |---|---|---|
 | 1 — beat `MaxBasePowerPlayer` | **0.663 ± 0.029** (95% CI, n=1 seed) at 2M steps | **passed** |
-| 2 — beat `SimpleHeuristicsPlayer` (0.5 bar) | best **0.408 ± 0.016** (12M, [512,512], n=1 seed); a 6M continuation reached 0.432 pooled but reads as specialization (below) | **not passed** |
+| 2 — beat `SimpleHeuristicsPlayer` (0.5 bar) | best **0.417 ± 0.009** pooled, 3 seeds (0.408/0.411/0.432, spread 0.024; 12M, [512,512]); a 6M continuation reached 0.432 pooled but reads as specialization (below) | **not passed** |
 | 3 — self-play with a historical-checkpoint opponent pool | from-scratch self-play **learns**: 0.380 pooled vs SH; 0.484 head-to-head vs the equal-budget fixed-bot policy (a resolvable deficit, z ≈ −2.5) | **complete** — no win-rate bar; the deliverables were the loop and its pre-registered reads |
 
-### Milestone 2: four levers to 0.408
+### Milestone 2: four levers to ~0.42
 
 A search path, not four confirmatory tests — each lever was chosen after
 reading the previous one, two of the four rows are single-seed, and the
@@ -570,7 +571,7 @@ estimates:
 |---|---|---|
 | Real encoder (10 → 611 dims) | ~0.26 (500-battle probe of the milestone-1 policy) → 0.292 ± 0.014 at 2M; the cross-protocol delta is not itself resolvable (z ≈ 1.2) | credited a priori — the placeholder encoder carried no HP/status/boost information at all, and the curve stopped plateauing |
 | Budget (2M → 6M at [64,64]) | 0.292 → 0.358 ± 0.015, flat from ~2.5M on at this width | credited, exhausted |
-| Capacity ([64,64] → [512,512]) | matched-budget 4–6M in-training bands 0.346 vs 0.316, and the shape: [64,64] flat from 2.5M, [512,512] still climbing at 12M (final 0.408 ± 0.016) | credited — biggest single lever; the 0.358 → 0.408 endpoint pairing confounds capacity with budget, so the attribution rests on the band and the shape |
+| Capacity ([64,64] → [512,512]) | matched-budget 4–6M in-training bands 0.346 vs 0.316, and the shape: [64,64] flat from 2.5M, [512,512] still climbing at 12M (s0 final 0.408; later replicated ×3 — pooled 0.417 ± 0.009) | credited — biggest single lever; the 0.358 → 0.408 endpoint pairing confounds capacity with budget, so the attribution rests on the band and the shape |
 | Distribution (70/20/10 SH/max-power/random mixture, 3 seeds, 6M) | pre-registered in-training read fired "at/below"; locked-eval delta +0.032 ± 0.017 (z ≈ 1.9, against a single-seed control likely sitting in an eval dip) | not credited — at most a nudge, nowhere near the ~0.1 gap to the bar |
 
 The [512,512] curve's per-2M return gains decay geometrically
@@ -616,7 +617,8 @@ are 100 episodes each, se ≈ 0.05; no claim here rests on a single rung.)
   reporting is that this policy never saw SH and gives up only that much to
   policies trained on it.
 - **The plateau.** Two independent training regimes land in a 0.38–0.41
-  band (from-scratch 0.380 ± 0.009; fixed-bot final 0.408 ± 0.016), with
+  band (from-scratch 0.380 ± 0.009; fixed-bot 12M pooled 0.417 ± 0.009 over
+  3 seeds, spread 0.024), with
   from-scratch rungs flattening into 0.36–0.40 after ~8M, consistent with
   the ≈ 0.42 projection. (Warm-started self-play finishing at 0.408 is not
   independent evidence — a null returns its own initialization.)
@@ -647,8 +649,11 @@ generation (0.96σ apart). Against SH's own mirror baseline — the recorder's
 win rate over the collection battles, 0.489/0.486; ties-as-non-wins is why
 a mirror sits below 0.5 — the clone pays a real ~0.03 cloning tax (≈ 4σ):
 it is a demonstrably *imperfect* clone, and what is demonstrated is 0.453,
-not 0.49. That is enough: 0.453 sits **+0.045 above the best fixed-bot
-policy** (z ≈ 2.5, 95% CI +0.01 to +0.08). Capacity was milestone 2's
+not 0.49. That is enough: 0.453 sits **+0.036 above the 12M fixed-bot
+pooled final** (0.417 ± 0.009, 3 seeds; z ≈ 2.8, 95% CI +0.011 to +0.061)
+— the pre-registered seed replication tightened the RL side from one seed
+to three and the wedge sharpened rather than shrank, and even the best
+fixed-bot seed (0.432) sits below the clone. Capacity was milestone 2's
 biggest lever and the obvious next dose — a wider trunk — was never run;
 the clone is why: this trunk already represents a 0.453 policy, so capacity
 is not what binds.
@@ -691,7 +696,8 @@ Findings worth the compute:
 Caveats stated rather than buried:
 
 - **Milestone 2 is not passed.** The bar was set on 2026-07-25 and has not
-  moved. Best measured is 0.408 (single-seed) / 0.432 (pooled, but
+  moved. Best measured is 0.417 ± 0.009 pooled fixed-bot (best seed 0.432) /
+  0.432 (the 18M continuation, but
   specialization per the head-to-head).
 - **The from-scratch result is a 6%-budget result.** Huang & Lee's
   from-scratch PPO self-play used ~192M learner transitions on Gen 7 random
@@ -711,7 +717,7 @@ Caveats stated rather than buried:
   head-to-head above averages both orientations, which cancels it; any
   single-orientation number in this domain is biased by ~2 points.
 
-The phase so far is ~115M environment steps across ~25 runs — about 22
+The phase so far is ~140M environment steps across ~27 runs — about 27
 hours of laptop-CPU wall clock, at most three concurrent runs against one
 local Showdown server, no GPU. Every run directory is self-describing
 (resolved config, git SHA, W&B history, checkpoints); the figure is

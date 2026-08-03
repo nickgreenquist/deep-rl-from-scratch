@@ -18,27 +18,24 @@ conflicts with the newest session-log entry, the log wins — say so and fix thi
   chased under this recipe class — bar stays unmet and unmoved; 16×-budget from-scratch is
   untested-not-excluded, deferred on cost; (4) BC-warm-start deferred to its own
   pre-registered design session. Full wording in the 2026-08-02 write-up log entry.
-- Milestone ladder: M1 PASSED 0.663 · M2 NOT passed (best 0.408 n=1; 0.432 pooled reads as
-  specialization) · M3 complete and shipped.
-- Git: 4 commits ahead of origin after this session (P4 pre-reg, P4 verdict, write-up,
-  docs). Standing rule: ask the maintainer before any push — and the push now publishes
-  the milestone-3 section.
+- Milestone ladder: M1 PASSED 0.663 · M2 NOT passed (fixed-bot 12M pooled 0.417 ± 0.009,
+  3 seeds, best seed 0.432; the 18M continuation's 0.432 reads as specialization) · M3
+  complete and shipped.
+- Git: 6 commits ahead of origin. Standing rule: ask the maintainer before any push — and
+  the push now publishes the milestone-3 section.
 
-- **Both write-up hardening steps taken (2026-08-02 later entry):** clone final-vs-best
-  asymmetry measured a non-issue (all 12 evals within noise; README parenthetical added);
-  `heur_512_s{1,2}` 12M replication PRE-REGISTERED and handed over for overnight — the
-  3-seed pooled replaces the n=1 0.408 in the wedge, retention rule locked (resolved iff
-  0.4530 − p_RL ≥ 2·se_diff ≈ 0.026).
+- **Both hardening steps CLOSED (2026-08-02 later + overnight entries):** clone
+  final-vs-best measured a non-issue (12 evals, all within noise), and the heur_512
+  replication ran overnight — s1 0.411 / s2 0.432, pooled p_RL 0.417 ± 0.009 (spread
+  0.024). Retention rule fired RESOLVED: clone − p_RL = +0.036, z = 2.81. README amended
+  per the locked rule (wedge, milestone table, figure now 3 fixed-bot seeds); the n=1
+  caveat on the lineage's key number is retired.
 
 ## Next, in order
 
-1. **Overnight (maintainer's terminal): `heur512_seeds.sh`** — heur_512 s1+s2, 12M each
-   2-wide, finals included (~5–6 h). Needs server up + the already-clean tree.
-2. **Morning read**: pre-registered rule from the 2026-08-02 later entry; amend the README
-   wedge sentence + milestone table with the 3-seed number either way.
-3. Push decision (maintainer) — publishes the milestone-3 section.
-4. P3 team-luck variance decomposition (~20 min, analysis appendix).
-5. P5 rollout_steps 512 — pre-registration first, then run; BC-warm-start design session
+1. Push decision (maintainer) — publishes the milestone-3 section.
+2. P3 team-luck variance decomposition (~20 min, analysis appendix).
+3. P5 rollout_steps 512 — pre-registration first, then run; BC-warm-start design session
    behind it.
 
 ## Watch items

@@ -1392,6 +1392,31 @@ order; earlier phases follow below.
   session*: the pre-registered read from disk, README amendment per the rule, then P3 and the P5
   pre-registration.
 
+- 2026-08-02 (overnight close-out: heur_512 replication COMPLETE — the wedge survives its
+  pre-registered test and SHARPENS; README amended per the locked rule) — **Both runs trained clean
+  in the maintainer's terminal (launched 18:29:43, stamped `b87f6a0` / `git_dirty: false`, ~685
+  steps/s 2-wide, done ~23:20; the script ran both locked finals itself; 30-min read-only
+  monitoring loop reported throughout, no interventions).** *The pre-registered read, taken at
+  23:30*: finals s1 411/1000 = 0.411 (ties 17), s2 432/1000 = 0.432 (ties 18); pooled with s0's
+  408/1000: **p_RL = 1251/3000 = 0.4170 ± 0.0090, seed-std 0.0131, spread 0.024** — the fixed-bot
+  12M cell is tight (nothing like sp6m's 0.061 continuation spread), s0 was the LOW seed, and the
+  n=1 caveat on the lineage's key number is retired. **Retention rule fired RESOLVED: clone 0.4530
+  − 0.4170 = +0.0360 ≥ 0.0256 (2·se_diff), z = 2.81** — the wedge narrowed in points (0.045 →
+  0.036) and sharpened in resolution (z 2.5 → 2.8), and even the best fixed-bot seed (0.432) sits
+  below the clone; the training-side verdict stands on a 3-seed RL base. Side notes: s2's 0.432
+  equals the cont6m pooled endpoint — the 12M seed distribution reaches the continuation's value,
+  consistent with the ~0.42 projection; the turn-1000 auto-tie warning appeared once in s1's log
+  but eval ties stayed 1.7–2.1% (stall long-tail, rare as before). *README amended per the locked
+  rule (9 edits)*: status row, protocol paragraph (only M1 is single-seed now), milestone-2 table
+  cell (0.417 ± 0.009 pooled, per-seed listed), ledger header "four levers to ~0.42", capacity row
+  (s0 final + replication), plateau bullet (0.38–0.42 band), the wedge sentence (+0.036, z ≈ 2.8,
+  CI +0.011..+0.061, replication named), the milestone-2 caveat, compute line (~140M steps, ~27 h);
+  figure regenerated with all three fixed-bot seeds and a pooled 3-seed finals row
+  (`runs/showdown_heur_512_s{1,2}/history.csv` extracted for it). Artifacts:
+  runs/showdown_heur_512_s{1,2}/ (full ckpt ladders, final_eval_heur_1000.json each, offline wandb).
+  *Next*: push decision (maintainer), P3 (~20 min analysis), P5 pre-registration, BC-warm-start
+  design session behind them.
+
 - 2026-07-21 — Repo scaffolded: structure, README, CLAUDE.md, `.gitignore`, pinned `pyproject.toml`.
   Initial commit.
 - 2026-07-22 — Pushed to GitHub. Created `deep-rl` conda env; installed pinned deps and smoke-tested
