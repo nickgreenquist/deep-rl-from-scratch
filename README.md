@@ -734,9 +734,15 @@ the draw does not decide battles at the species level). The rollout-length
 probe was credited: quadrupling the PPO rollout at fixed budget — the
 config's one true signal-to-noise knob — lifted the 6M win rate from 0.355
 to 0.392 (3 seeds each side, pre-registered read, z = 3.0), reaching at
-half the budget roughly what the base recipe took 12M to reach; whether it
-moves the ~0.42 plateau itself, rather than the approach speed, is an open
-12M-extension decision. The genuinely new door
+half the budget roughly what the base recipe took 12M to reach. Its
+pre-registered follow-up — linearly annealing the learning rate to zero
+over the budget on top of that recipe, the one lever prior work offered a
+controlled ablation for — was credited too: pooled 6M finals moved 0.392
+to 0.443 ± 0.009 (3 seeds × 1000 battles), the first result on this board
+above the ~0.42 plateau every earlier arm converged to, and within noise
+of the BC clone's 0.453. The anneal joins the recipe for any 12M
+extension, which must run from scratch — an annealed checkpoint cannot be
+warm-extended. The genuinely new door
 is warm-starting PPO from the clone, which sits above every RL policy on
 this board — deliberately deferred: it changes what "from scratch" means
 for every number that follows, and deciding *in advance* what a 0.5 from a

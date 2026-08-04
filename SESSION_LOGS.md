@@ -1639,6 +1639,28 @@ order; earlier phases follow below.
   self-play-only 2× (a scripted opponent's seat is off-policy data for PPO). Ops note pinned in
   STATUS: no `rl/` source edits until `lra_probe.sh` exits FULLY — its finals stage boots fresh
   python that imports `rl`.
+- 2026-08-04 (P5b CREDITED — LR annealing is the second credited lever on the r512 recipe; first
+  result above the ~0.42 plateau) — **Pooled 3-seed finals 1330/3000 = 0.4433 ± 0.0091 vs the r512
+  flat-lr control 0.3923 ± 0.0089: delta +0.051, twice the +0.025 credit line (z ≈ 4.0). Per seed
+  0.416 / 0.468 / 0.446 — every seed individually at or above the credit threshold.** Read taken
+  exactly per the locked header in `configs/showdown_r512_lra.yaml`; runs launched 2026-08-03
+  ~20:56 on `5074c1b`, finals landed ~23:47 (~2.85 h 3-wide), `lra_probe.sh` fully exited before
+  any read. **R0 gates all pass:** late (≥5.5M) entropy 0.306–0.315 — frozen as pre-stated
+  (lr → 0), inside [0.2, 1.0]; ties 1.7–2.2% (≤4%); steps/s 614–616 vs the 587 basis (within 5%,
+  gate was 25%). **Secondaries (recorded, not gated):** the whole late band moved, not just the
+  frozen endpoint — seed-mean rung win rates 4/5/6M = 0.410 / 0.437 / 0.407 vs r512's
+  0.396 / 0.383 / 0.386 (rungs are n=100 noise; the n=1000 finals are the signal). approx_kl
+  shrinks with the schedule as expected: 0.0044 (0–1M) → 0.0034 (2–3M) → 0.0018 (4–5M) → 0.0004
+  (5.5–6M). Entropy falls 0.77 → ~0.35 by 2–3M and stops falling at ~0.31 from ~4M on. **What it
+  means:** 6M annealed finals (0.4433) sit ABOVE the 12M flat-lr fixed-bot pooled 0.417 ± 0.009
+  and its best seed 0.432, and within noise of the BC clone's 0.453 — the plateau moved via a
+  training-side change, consistent with P4's training-side localization. Wang's anneal ablation
+  transfers directionally at this scale (his 0.55 → 0.80; ours 0.392 → 0.443, smaller but real).
+  **Amendment executed per the pre-stated condition:** README closing paragraph gained the
+  measured sentence; the anneal joins the recipe for any 12M-extension question — which is now a
+  from-scratch `lr_anneal_steps: 12000000` run (annealed ckpts cannot be warm-extended;
+  train.py refuses). Next per the standing order: throughput session, then the BC-warm-start
+  design session (the anneal verdict slots into that package as a now-credited component).
 
 - 2026-07-21 — Repo scaffolded: structure, README, CLAUDE.md, `.gitignore`, pinned `pyproject.toml`.
   Initial commit.

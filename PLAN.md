@@ -197,7 +197,9 @@ lean, kept ready.
   from `SimpleHeuristicsPlayer` (VGC-Bench: +25–30 pts vs SH at a matched 5M budget; ps-ppo used
   BC-fit-to-the-heuristic as an architecture screen), faint-based reward shaping (ps-ppo: ±0.1
   against the ±1 terminal; potential-based if policy invariance is wanted; their
-  post-hoc-alignment off-by-one is the known trap), and the P5b LR-anneal verdict. Design the
+  post-hoc-alignment off-by-one is the known trap), and the P5b LR-anneal verdict — CREDITED
+  2026-08-04 (0.392 → 0.443 pooled at 6M; the anneal joins the recipe; annealed ckpts cannot be
+  warm-extended, so any 12M arm is from-scratch). Design the
   recipe as a pre-registered stack, not one lever at a time.
 - **Speed before the next science chapter (directed 2026-08-03).** After the P5b read, a
   throughput session precedes the BC-warm-start design session. The rationale is meta-level
