@@ -1,9 +1,8 @@
 # Handoff — written 2026-08-04 ~05:45 on explicit request; fold in, then restore the stub
 
-STATUS.md, PLAN.md and SESSION_LOGS.md are CURRENT through this entire session. The whole
-throughput session is already durable in the 2026-08-04 log entry — do NOT re-derive it from
-here. Tree clean at `f7d117b`; **TWO local commits are unpushed** (`8ae7796`, `f7d117b`) —
-push decision open, ask first.
+STATUS.md, PLAN.md and SESSION_LOGS.md are CURRENT through this entire session, and everything
+is COMMITTED AND PUSHED — nothing is pending. The whole throughput session is already durable
+in the 2026-08-04 log entry; do NOT re-derive it from here. This file is next steps only.
 
 ## FIRST ACTION — the loop-split instrument (design agreed in-session, not yet written)
 
