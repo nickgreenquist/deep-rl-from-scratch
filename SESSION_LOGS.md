@@ -1573,6 +1573,52 @@ order; earlier phases follow below.
   anneal test is its own run. Launch script `lra_probe.sh` (session tmp) handed over — ~2.9 h
   3-wide. The 12M flat-lr r512 extension decision stays OPEN, untaken.
 
+- 2026-08-03 (latest: Wang's GitHub forks read — the MCTS forward model turns out to be UPSTREAM,
+  in our own checkout; scope decisions ratified: MCTS open as a follow-up phase, pure-self-play
+  retired as an identity constraint) — **The maintainer located Wang's GitHub (`quadraticmuffin`)
+  and provided full fork-vs-upstream diffs for his three repos (archived:
+  `prior_work/wang_fork_diffs.md`); read in full, key claims verified against our tree.**
+  *pokemon-showdown fork (13 commits, 6 files)* — the thesis's determinization machinery.
+  Headline (spotted by the maintainer's teammate, verified here at file:line): **battle
+  serialization is upstream Showdown, not Wang's work** — `State.serializeBattle`/
+  `deserializeBattle`, `Battle.toJSON`/`fromJSON`, `resetRNG(seed=null)` (fresh chance draws per
+  rollout), `restart()`, `undoChoice` all exist in our vendored checkout (`showdown/sim/
+  state.ts:61,84`; `showdown/sim/battle.ts:318,322,360,1968,3029`). Wang added two stream
+  commands — `>getstate` (state → JSON) and `>load` (deserialize + restart + undo pending choices
+  + resetRNG(null) + reroll the opponent's unrevealed team under revealed constraints +
+  re-request) — plus `SetCriteria`/`rerollTeam`/`replaceSet` and ~370 lines of gen4 constrained
+  team-gen (hallucinated Hidden Power types, weather-probability ability sampling, volatile-aware
+  move disabling). **MCTS cost estimate revised DOWN: the forking interface is a few hundred
+  lines against existing machinery** (gen1 port target `showdown/data/random-battles/gen1/
+  teams.ts`); the remaining cost is the search stack itself (Wang: 20 workers, 1000–2000
+  rollouts/move, ~10 s/move — evals go ~100× slower). Gen-1-izing the constraint problem: no
+  Encore/Taunt/choice items — the surviving volatile constraints are Disable (a resampled set
+  must contain the disabled move), lock states (Wrap/Thrash/recharge: trivially satisfied, the
+  locked move is revealed by use), and Transform. Also in the fork, RL server hygiene for long
+  runs: clear players from finished rooms (usernames train*/eval*), gutted `onEnd` (no
+  ladder/replay work per battle), tie-restriction removed — the fix pattern if a long run ever
+  shows the poke-env-#332 slowdown signature (12M extension watch item). *poke-env fork (36
+  commits)* — state-tracking corrections, almost no architecture. Both encoder-relevant fixes
+  verified ALREADY UPSTREAMED in our 0.15.0 (`[from] lockedmove` → `use=False`; sleep
+  `status_counter` incremented in `cant_move`); most of the rest is structurally impossible in
+  gen1 (Max PP tables, Sleep Talk, Curse ???-type, ability weather, Trace, `_orig_item`, choice
+  lock). The risk CLASS stays live — our own gen1 findings prove it (SH setup branch dead on the
+  0.15.0 enum bug; Light Screen → `Effect.UNKNOWN`) — but is bounded by the clone (0.453 through
+  this exact encoder). Optional hardening item, unregistered: a differential obs audit, encoder
+  fields vs the raw protocol log over sampled battles. Notably absent from all three forks: the
+  non-lockstep parallelization (it lives in his unpublished training code, as do masking and the
+  LR schedule). *SB3 fork (8 commits)* — pure throughput instrumentation (rollout/train/callback/
+  eval time splits, CSV logging): confirms stock SB3 PPO; the thesis hyperparameters are tuned
+  values in SB3's knob shape. **Scope decisions (maintainer, in-discussion): (1) MCTS is OPEN as
+  a follow-up phase — inference-time-only in Wang's pattern, so it composes with every training
+  lever and nothing done now forecloses it; the Phase-4-era "no forward model" premise is
+  formally revised in PLAN.md (it meant "no cheap forward model", and even that is now priced).
+  Keep the value head healthy — search truncates rollouts at leaves with V. (2) The capstone
+  need not be a pure self-play agent — BC init, reward shaping, and teacher data are first-class
+  recipe components for the BC-warm-start design session, designed and pre-registered as a
+  stack.** P5b launched by the maintainer ~20:56 on `5074c1b` (3 seeds up, liftoff clean, the
+  auto-tie server notice benign as before).
+
 - 2026-07-21 — Repo scaffolded: structure, README, CLAUDE.md, `.gitignore`, pinned `pyproject.toml`.
   Initial commit.
 - 2026-07-22 — Pushed to GitHub. Created `deep-rl` conda env; installed pinned deps and smoke-tested

@@ -174,6 +174,32 @@ matches per matchup**, not off Phase 4's 400 — theirs is driven by team random
 **Fallback if self-play stalls:** Procgen generalization study (train/test level gap) — the previous
 lean, kept ready.
 
+**Scope decisions from the prior-work dig (2026-08-03, maintainer-ratified; evidence in the
+2026-08-03 session-log entries and `prior_work/`):**
+
+- **MCTS is an OPEN follow-up phase — deferred, not ruled out.** Inference-time-only policy
+  improvement in Wang's pattern: training is untouched, the trained policy stays the artifact, and
+  search bolts on at evaluation — so it composes with every training lever and no current work
+  forecloses it. The Phase-4-era premise "tree search needs a forward model the capstone will not
+  have" is REVISED: the forward model exists upstream in our own vendored server —
+  `State.serializeBattle`/`deserializeBattle` (`showdown/sim/state.ts:61,84`) and
+  `Battle.toJSON`/`fromJSON`/`resetRNG(null)`/`restart()`/`undoChoice`
+  (`showdown/sim/battle.ts:318,322,360,1968,3029`) — and Wang's fork adds only two stream commands
+  plus constrained team regeneration (diffs: `prior_work/wang_fork_diffs.md`). Gen 1 shrinks the
+  determinization further (no items/abilities/Hidden-Power typing; volatile constraints reduce to
+  Disable, lock states, Transform; port target `showdown/data/random-battles/gen1/teams.ts`).
+  Deferred because the real cost is the search stack (Wang: 20 workers, 1000–2000 rollouts/move,
+  ~10 s/move — evaluation ~100× slower) and search's measured edge is smallest in Gen 1 (PokéAgent
+  2025: MCTS #8 in Gen1OU where pure policies took #1/#2). Standing consequence now: keep the value
+  head healthy — search truncates rollouts at leaves with V.
+- **"Pure self-play" is retired as an identity constraint.** The capstone agent may use teachers,
+  shaping, and offline data. Concretely in scope for the BC-warm-start design session (the next
+  chapter): BC init from `SimpleHeuristicsPlayer` (VGC-Bench: +25–30 pts vs SH at a matched 5M
+  budget; ps-ppo used BC-fit-to-the-heuristic as an architecture screen), faint-based reward
+  shaping (ps-ppo: ±0.1 against the ±1 terminal; potential-based if policy invariance is wanted;
+  their post-hoc-alignment off-by-one is the known trap), and the P5b LR-anneal verdict. Design the
+  recipe as a pre-registered stack, not one lever at a time.
+
 **Hardware (revised 2026-07-28 — the "rented cloud GPU" line was inherited from the Procgen-era
 capstone and did not survive contact with the repo's own measurements; see the session log).**
 Online self-play runs **CPU-first; no GPU is provisioned for it.** Reasoning of record: (1) the

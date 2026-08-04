@@ -6,12 +6,10 @@ conflicts with the newest session-log entry, the log wins — say so and fix thi
 
 ## Where we are (updated 2026-08-03)
 
-- **Milestone-3 write-up SHIPPED**: README has the Phase-5 results section (milestones 1–3
-  + the cloning diagnostic) with a house-style figure; every number verified
-  programmatically against run artifacts; three-Opus review pass folded in. The arc as
-  shipped: fixed-bot / warm-started / from-scratch arms all converge on ~0.4 vs
-  SimpleHeuristics, and the BC clone at 0.453 through the same stack locates the plateau
-  training-side (one-directional caveat attached; the clone's R2 fit gate miss disclosed).
+- **Milestone-3 write-up SHIPPED**: README Phase-5 section (milestones 1–3 + the cloning
+  diagnostic), every number verified against run artifacts. The shipped arc: all three arms
+  converge on ~0.4 vs SimpleHeuristics; the BC clone at 0.453 locates the plateau
+  training-side (one-directional caveat attached).
 - **Stop rule RATIFIED by the maintainer (2026-08-02 evening).** As adopted:
   (1) M3 ships now; (2) P3 = post-ship analysis appendix, P5 = real training probe needing
   its own pre-registration (entropy probe queued same tier); (3) the 0.5 bar stops being
@@ -41,17 +39,21 @@ conflicts with the newest session-log entry, the log wins — say so and fix thi
 - **Bridge audit CLEAN (2026-08-03):** 866 decisions (402 post-switch) vs heuristics — 0
   stale `available_moves`, 0 mask mismatches, PP decrements; the pokejax bug class does
   not reproduce on our request-driven path. Headline number not depressed by it.
-- **P5b pre-registered (2026-08-03, maintainer-directed):** LR-anneal probe — one variable,
-  `lr_anneal_steps` 0→6M (linear, existing machinery) on the r512 recipe, 6M × 3 seeds vs
-  the r512 pooled control 0.3923 ± 0.0089. **CREDITED iff pooled ≥ 0.418.** Full locked
-  read in `configs/showdown_r512_lra.yaml`. Annealed ckpts cannot be warm-extended.
+- **P5b LAUNCHED (2026-08-03 ~20:56, 3 seeds up):** LR-anneal probe — one variable,
+  `lr_anneal_steps` 0→6M (linear) on the r512 recipe, 6M × 3 seeds vs the r512 pooled
+  control 0.3923 ± 0.0089. **CREDITED iff pooled ≥ 0.418.** Locked read in
+  `configs/showdown_r512_lra.yaml`. Annealed ckpts cannot be warm-extended.
+- **Scope decisions (2026-08-03, in PLAN.md):** MCTS is an OPEN follow-up phase (inference-
+  only, Wang pattern) — the "no forward model" premise is revised: serialization is upstream
+  in our own Showdown checkout (verified file:line); Wang's forks read + archived
+  (`prior_work/wang_fork_diffs.md`). "Pure self-play" retired as an identity constraint —
+  BC init, shaping, teacher data are first-class for the BC design session.
 
 ## Next, in order
 
-1. **Maintainer launches the P5b probe overnight** — `lra_probe.sh` in the session tmp dir
-   (~2.9 h 3-wide; clean tree at launch; server must be up). Then the pre-registered read.
-2. **BC-warm-start design session** — confirmed high-prio next chapter (pre-registered
-   meaning first; VGC-Bench +25–30 pts and ps-ppo's BC-as-architecture-screen fold in).
+1. **P5b read when finals land** (~3 h from launch; per the locked config header).
+2. **BC-warm-start design session** — next chapter; design the stack (BC init + shaping +
+   anneal verdict) as one pre-registered package per the PLAN scope block.
 3. 12M flat-lr r512 extension decision — still open, untaken (interacts with P5b's result).
 
 ## Watch items
