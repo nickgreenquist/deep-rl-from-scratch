@@ -7,12 +7,11 @@ conflicts with the newest session-log entry, the log wins — say so and fix thi
 ## Where we are (updated 2026-08-04)
 
 - **Milestone-3 write-up SHIPPED**: README Phase-5 section (milestones 1–3 + the cloning
-  diagnostic), every number verified against run artifacts. All three arms converge on ~0.4
-  vs SimpleHeuristics; the BC clone at 0.453 locates the plateau training-side.
+  diagnostic), numbers verified against run artifacts. All three arms converge on ~0.4 vs
+  SimpleHeuristics; the BC clone at 0.453 locates the plateau training-side. Ladder: M1 PASSED
+  0.663 · M2 NOT passed (fixed-bot 12M pooled 0.417 ± 0.009) · M3 shipped, pushed `422f9ee`.
 - **Stop rule RATIFIED (2026-08-02):** the 0.5 bar stops being chased under this recipe
   class; training probes need their own pre-registration. Wording in the 2026-08-02 entry.
-- Milestone ladder: M1 PASSED 0.663 · M2 NOT passed (fixed-bot 12M pooled 0.417 ± 0.009,
-  best seed 0.432) · M3 complete and shipped. Pushed through `422f9ee` 2026-08-04.
 - **P3 COMPLETE (2026-08-03):** observable draw explains ~4% of outcome variance (CV R²
   0.0375, p < 0.005; lower bound) — the draw does not decide battles at species level.
 - **P5 CREDITED (2026-08-03):** rollout_steps 128→512 lifts the 6M win rate 0.355 → 0.392
@@ -50,12 +49,12 @@ conflicts with the newest session-log entry, the log wins — say so and fix thi
 1. **P6 finals + read** — run `p6_finals.sh` (1000 battles/seed, locked protocol) once all six
    lanes exit, then `p6_read.py`. Both are staged in the session tmp dir. Do NOT run them while
    training is live; they need the same server.
-2. **Decompose collect Showdown-side** — NOW TRIGGERED by the split above. Re-run measurement
-   (a) (`scripts/showdown_throughput.py a`), which decomposes per-turn encode vs inference vs
-   env gap but last ran on the 10-dim PLACEHOLDER encoder, before the real 611-dim one landed
-   2026-07-30. Script change, not a seam change — do NOT put an encode timer in shared code
-   (`embed_battle` lives inside `ShowdownSingles`; a `hasattr` branch in `rl/train.py` for one
-   env is the pattern the masking contract bans).
+2. **Decompose collect Showdown-side** — NOW TRIGGERED by the split. Re-run measurement (a)
+   (`scripts/showdown_throughput.py a`): it splits per-turn encode vs inference vs env gap but
+   last ran on the 10-dim PLACEHOLDER encoder, pre-dating the real 611-dim one (2026-07-30).
+   Script change, NOT a seam change — an encode timer must not go in shared code (`embed_battle`
+   is inside `ShowdownSingles`; a `hasattr` branch in `rl/train.py` is what the masking contract
+   bans).
 3. **BC-warm-start design session** — the stack (BC init + shaping + anneal verdict) as one
    pre-registered package per the PLAN scope block. The anneal is now a credited component.
 
