@@ -22,35 +22,25 @@ conflicts with the newest session-log entry, the log wins — say so and fix thi
   per seed 0.416/0.468/0.446. First result above the ~0.42 plateau; beats 12M flat-lr (0.417)
   at half budget; within noise of the BC clone (0.453). README amended. Annealed ckpts cannot
   be warm-extended — any 12M anneal arm is from-scratch `lr_anneal_steps: 12000000`.
-- **THROUGHPUT SESSION COMPLETE (2026-08-04), no `rl/` source changed.** Work item (1) was a
-  one-line edit to gitignored `showdown/config/config.js`: `simulator: 1 → 4`. Shared-server
-  collection now 2,237/5,246/7,096/9,233/11,024/11,313/9,966 dec/s at W=1/2/3/4/6/8/12 —
-  plateau W=6–8; **+81% at W=4 vs simulator:1, beats one-server-per-lane by 26–50%. Server
-  sharding RETIRED.** Full loop: **W=3 → 659 steps/s per lane, W=6 → 556** — the ≥685 goal
-  **NOT met** (~4% short); lane scaling met (3→6 costs 15.6%/lane, returns +41% aggregate).
-- **LOAD-BEARING FINDING: collection-only benchmarks overstate full-loop gain ~7×.**
-  simulator:4 bought ~29% collection-side but **+3.7% end-to-end** (615 → 638 mean vs the
-  P5b lanes, same recipe/3-wide/machine). **The loop is update-and-encode bound, not
-  collection bound** — contradicting the Phase-5 hardware note, the collection-loop
-  architecture work, and the surrogate-tuning interest, all of which assume the opposite.
-- **Facade CLOSED (2026-08-04) as a self-play-scoped item, not on new measurement.** Prize 1
-  measured: [512,512] batch-1 83.1 µs vs batch-8 41.4 µs/sample = 2.04×, worth 2.5% under
-  self-play and **exactly 0% under `opponent: heuristics`** (every queued run); prize 2 is
-  bounded by server-wait, which the 3.7% says barely exists. **Record corrected:** late-July's
-  "headroom ~zero at [512,512]" is wrong — right verdict, wrong arithmetic; the `[64,64]`
-  hardcode in `showdown_throughput.py` has now caused two misreads. Revisit only when a
-  self-play chapter is designed, priced as a code-cost tradeoff.
+- **THROUGHPUT (2026-08-04), no `rl/` source changed.** `simulator: 1 → 4` in gitignored
+  `showdown/config/config.js` is the whole of it: +81% collection at W=4, beats
+  one-server-per-lane by 26–50%, **server sharding RETIRED**. Full loop W=3 → 659 steps/s per
+  lane, W=6 → 556; the ≥685 goal NOT met (~4% short), lane scaling met. Curve in the log entry.
+- **LOOP SPLIT MEASURED (2026-08-04; instrument in `rl/train.py`, always-on):** **collect
+  94.5–95.0%, update 5.0–5.5%, eval negligible** — six lanes, 3- and 6-wide, all agreeing.
+  **Supersedes the morning's "update-and-encode bound" inference: the update is not a
+  bottleneck and a GPU at [512,512] buys at most ~5%.** Reconciles the 29%-collection →
+  3.7%-end-to-end puzzle: `showdown_throughput.py` measures server-side decisions/s, so the
+  server is a small slice of collect while our own encode + inference is the bulk. **All
+  headroom is inside collect** — hence next-item 2.
+- **Facade CLOSED (2026-08-04), self-play-scoped, not on new measurement.** Prize 1 is 2.04×
+  ([512,512] batch-1 83.1 µs vs batch-8 41.4 µs/sample) = 2.5% under self-play and **exactly 0%
+  under `opponent: heuristics`** (every queued run). Late-July's "headroom ~zero at [512,512]"
+  was wrong arithmetic, right verdict; the `[64,64]` hardcode in `showdown_throughput.py` has
+  caused two misreads — anything quoted from it must carry its width.
 - **Prior work + scope (2026-08-03, in PLAN.md):** our 0.39–0.42 was in-band for scratch PPO;
-  **BC-init +25–30 pts at matched budget** is the best-evidenced remaining lever (Wang's
-  anneal ablation is now replicated in-repo by P5b). MCTS is an OPEN follow-up phase; "pure
-  self-play" retired as an identity constraint. Sources in `prior_work/`.
-
-- **LOOP SPLIT MEASURED (2026-08-04, instrument landed in `rl/train.py`, always-on):**
-  **collect 94.5–95.0% of the loop, update 5.0–5.5%, eval negligible** — consistent across six
-  lanes at both 3- and 6-wide. **This overturns the "update-and-encode bound" half of the
-  morning's inference: a GPU at [512,512] buys at most ~5%.** It reconciles the 29%→3.7% puzzle
-  — `showdown_throughput.py` measures server-side decisions/s, so the server is a small slice of
-  collect and our own encode + inference is the bulk. All headroom is inside collect.
+  **BC-init +25–30 pts at matched budget** is the best-evidenced remaining lever. MCTS is an
+  OPEN follow-up phase; "pure self-play" retired as an identity constraint. See `prior_work/`.
 - **P6 RUNNING (launched 2026-08-04 ~18:26):** flat vs annealed at 12M on r512, 3 seeds/arm,
   6-wide, both from scratch. Pre-registration committed in `configs/showdown_r512_12m.yaml`.
   524–548 steps/s per lane (inside R0). Result pending.
@@ -71,22 +61,15 @@ conflicts with the newest session-log entry, the log wins — say so and fix thi
 
 ## Watch items
 
-- **CONCURRENT LANES MUST HAVE DISTINCT SEEDS (2026-08-04) — including across arms of one
-  experiment.** `rl/common/seeding.py` seeds the global `random` module, and poke-env derives
-  player usernames from it, so same-seed concurrent lanes request identical Showdown usernames.
-  The loser gets `|nametaken|`, surfacing as the misleading `TimeoutError: Agent is not
-  challenging` at first `reset`. Killed all three P6 annealed lanes; they were relaunched on
-  seeds 3,4,5.
-- **Startup-crash hazard (2026-08-04):** a lane can die with SIGSEGV in torch lazy static
-  init before writing any log or run dir, and a naive launcher reports success over a
-  short-handed result (hit W=6: 5 of 6). Not memory. A related SIGABRT at teardown hit the
-  P5b finals (results unaffected). **Every launcher must stagger starts and assert all W run
-  dirs exist with complete histories before reporting done.**
-- **Liveness assertions must check progress, not artifacts (2026-08-04):** `_write_run_metadata`
-  writes the run dir before the first `reset`, so "the dir exists" is true for a lane that never
-  trains — it reported success over three dead P6 lanes. Also: **shell loops must run under
-  `bash`, not zsh** — unquoted `$VAR` does not word-split in zsh, and a watchdog written that way
-  declared all six lanes dead on its first tick.
+- **CONCURRENT LANES MUST HAVE DISTINCT SEEDS (2026-08-04), across arms too.** Global `random`
+  is seeded by `cfg.seed` and poke-env builds usernames from it, so same-seed concurrent lanes
+  collide; the loser gets `|nametaken|`, surfacing as `TimeoutError: Agent is not challenging`
+  at first `reset`. Killed P6's whole annealed arm.
+- **Launcher hygiene (2026-08-04), three ways it has now lied:** SIGSEGV in torch lazy static
+  init kills a lane before any log or run dir (W=6: 5 of 6; not memory); the run dir is written
+  BEFORE the first `reset`, so `-d` is true for a lane that never trains; and unquoted `$VAR`
+  does not word-split in **zsh**, so shell loops must run under `bash`. **Stagger starts, assert
+  battle PROGRESS not artifacts, and verify complete histories before reporting done.**
 - s0 late regression pattern; P5b's s0 was also the weak seed (0.416) — watch seed spread.
 - Pre-existing test flake: `test_full_episode_contract_against_live_server` fails only when
   the whole suite runs with a server up; passes alone (2026-08-01).
