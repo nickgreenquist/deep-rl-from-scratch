@@ -1542,6 +1542,37 @@ order; earlier phases follow below.
   the pokejax checklist.** Verification artifacts (thesis PDF, ps-ppo clone) live in the session
   tmp dir — ephemeral; the briefing file stays untracked pending the direction discussion.
 
+- 2026-08-03 (later: direction set by the maintainer — bridge audit CLEAN, P5b LR-anneal probe
+  pre-registered for overnight, prior_work/ archived, origin synced) — **Maintainer decisions on
+  the verification dig, verbatim intent: BC-warm-start design session confirmed HIGH-PRIO (next
+  chapter's opener); LR annealing WILL be tested — the session's lean to fold it into the BC
+  session was overridden, with the MinAtar anneal-cost-35% transfer explicitly discounted as
+  cross-game — overnight run slots offered; bridge audit approved; push approved.** *Pushed
+  through `957b4c1`*: the P3/P5 backlog, the verification fold, and `prior_work/` (index + the
+  maintainer's briefing tracked; Wang/VGC-Bench/Metamon/PokéAgent PDFs, ps-ppo README +
+  ladder screenshot, pokejax analyses + training log, EliteFurretAI RL.md, saketatreya write-up,
+  Ivison post all archived LOCAL-ONLY under `prior_work/*` gitignore — third-party copyright +
+  ~33 MB; `git add -f` if the maintainer ever wants them in history). *Bridge audit vs the
+  pokejax bug list: CLEAN.* 30 battles / **866 decisions (402 immediately post-switch) against
+  heuristics on the exact obs+mask path the agent sees: 0 stale `available_moves` (their 15.9%
+  does not reproduce — our request-driven Gym path reads post-request state; their bridge
+  presumably read mid-cycle), 0 action-mask mismatches** (probe recomputed expected move bits
+  from known∩available plus the single-move fallback rule; 35 fallbacks seen, all by-design
+  recharge/locks), **PP tracks** (551/866 decisions saw below-max PP, 362 observed post-use
+  drops; the 72 unchanged-after-choice are unexecuted moves — sleep/full-para/locks, expected in
+  Gen 1), sleep `status_counter` moves. The headline number is not depressed by this defect
+  class. Probe `bridge_audit.py` in the session tmp dir, ephemeral. *P5b pre-registered*
+  (`configs/showdown_r512_lra.yaml`, full locked read in the header): **one variable,
+  `lr_anneal_steps` 0 → 6M (linear 2.5e-4 → 0, existing `ppo.py` machinery, no code change) on
+  the credited r512 recipe, 6M × 3 seeds; control = the r512 probe itself, pooled 0.3923 ±
+  0.0089, already evaluated under the locked protocol. CREDITED iff pooled finals ≥ 0.418
+  (Δ ≥ +0.025 = 2·se_diff).** Stated divergence: Wang's schedule is a power decay with untuned
+  constants; this tests the linear class the repo implements — a null exonerates linear
+  annealing here, not annealing in general. Extension note pinned in the header: an annealed 6M
+  ckpt cannot be warm-extended (`train.py` refuses `init_from` + `lr_anneal_steps`); a 12M
+  anneal test is its own run. Launch script `lra_probe.sh` (session tmp) handed over — ~2.9 h
+  3-wide. The 12M flat-lr r512 extension decision stays OPEN, untaken.
+
 - 2026-07-21 — Repo scaffolded: structure, README, CLAUDE.md, `.gitignore`, pinned `pyproject.toml`.
   Initial commit.
 - 2026-07-22 — Pushed to GitHub. Created `deep-rl` conda env; installed pinned deps and smoke-tested

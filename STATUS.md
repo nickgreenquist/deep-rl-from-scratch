@@ -30,29 +30,29 @@ conflicts with the newest session-log entry, the log wins — say so and fix thi
   credited lever since capacity; at half the budget it nearly matches the base recipe's
   12M value. README closing paragraph amended per the pre-stated condition.
 
-- **Prior-work verification COMPLETE (2026-08-03, three-Opus dig; full entry in the log):**
-  the maintainer's external briefing largely survives. Key calibrations: Wang's gen4 agent
-  (tuned + annealed lr) was at **0.575 vs SH at our 6M budget** (digitized Fig 4.1; crosses
-  0.5 at ~4M); our 0.39–0.42 is in-band for scratch PPO (VGC-Bench scratch SP 0.48 at 5M;
-  BC-initialized 0.62–0.78 — **BC init +25–30 pts at matched budget** is the best-evidenced
-  lever, LR annealing the only controlled ablation: 0.55→0.80). ps-ppo's "MLP stuck at 1100
-  Elo" claim has zero code support (anecdote); its 2102-Elo pure-policy result is real but
-  confounded (BC init + shaping + arch, no ablation). Gen-1 favorable: MCTS placed #8 in
-  Gen1OU (PokéAgent) where pure policy took #1/#2; SH is weakest vs humans in Gen 1 (~0.21).
-  Wang + ps-ppo both used NO opponent pool. Our poke-env 0.15.0 SH has a +1-boost stat bug
-  (evaluates as +2) — stock-vs-patched comparability caveat only. All Showdown runs train
-  flat lr (anneal machinery exists; the 2026-08-01 lr-test rejection was about magnitude,
-  not schedule).
+- **Prior-work verification COMPLETE (2026-08-03; full entries in the log):** Wang's gen4
+  agent (tuned + annealed lr) was at **0.575 vs SH at our 6M budget**; our 0.39–0.42 is
+  in-band for scratch PPO (VGC-Bench scratch 0.48 at 5M; **BC-init +25–30 pts at matched
+  budget** — best-evidenced lever; LR annealing the only controlled ablation, 0.55→0.80).
+  ps-ppo's "MLP stuck at 1100 Elo" has zero code support; its 2102-Elo pure-policy result
+  is real but confounded. Gen-1 favorable: MCTS placed #8 in Gen1OU where pure policy took
+  #1/#2; SH weakest vs humans in Gen 1 (~0.21). Wang + ps-ppo both used NO opponent pool.
+  Sources archived in `prior_work/` (PDFs local-only, gitignored; index tracked).
+- **Bridge audit CLEAN (2026-08-03):** 866 decisions (402 post-switch) vs heuristics — 0
+  stale `available_moves`, 0 mask mismatches, PP decrements; the pokejax bug class does
+  not reproduce on our request-driven path. Headline number not depressed by it.
+- **P5b pre-registered (2026-08-03, maintainer-directed):** LR-anneal probe — one variable,
+  `lr_anneal_steps` 0→6M (linear, existing machinery) on the r512 recipe, 6M × 3 seeds vs
+  the r512 pooled control 0.3923 ± 0.0089. **CREDITED iff pooled ≥ 0.418.** Full locked
+  read in `configs/showdown_r512_lra.yaml`. Annealed ckpts cannot be warm-extended.
 
 ## Next, in order
 
-1. **Maintainer direction decision:** (a) 12M r512 extension (~5.2 h; plateau vs approach
-   speed) vs (b) LR-anneal probe (new candidate from verification; needs pre-registration
-   + reconciling MinAtar's "anneal cost 35%") vs (c) straight to the BC-warm-start design
-   session (now the best-evidenced big lever; ps-ppo's BC-as-architecture-screen folds in).
-2. Push decision — commits since `17ae11b` are local.
-3. Optional cheap check: audit our poke-env bridge vs the pokejax bug list (stale
-   `available_moves` after switches, PP not decrementing, sleep off-by-one).
+1. **Maintainer launches the P5b probe overnight** — `lra_probe.sh` in the session tmp dir
+   (~2.9 h 3-wide; clean tree at launch; server must be up). Then the pre-registered read.
+2. **BC-warm-start design session** — confirmed high-prio next chapter (pre-registered
+   meaning first; VGC-Bench +25–30 pts and ps-ppo's BC-as-architecture-screen fold in).
+3. 12M flat-lr r512 extension decision — still open, untaken (interacts with P5b's result).
 
 ## Watch items
 
