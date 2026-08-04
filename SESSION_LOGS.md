@@ -1470,6 +1470,78 @@ order; earlier phases follow below.
   local). Artifacts: runs/showdown_r512_s{0,1,2}/ (ckpt ladders, final_eval_heur_1000.json,
   histories, offline wandb).
 
+- 2026-08-03 (prior-work verification: the maintainer's external briefing survives with corrections
+  at the edges — three-Opus dig on Wang, ps-ppo, and the wider field; 0.39–0.42 sits inside the
+  credible scratch-PPO band, and the two levers the literature actually credits are LR annealing
+  and BC init) — **`PHASE5_PRIOR_WORK_BRIEFING.md` (maintainer's no-repo-access session: Wang
+  thesis read in full, ps-ppo from a search snippet only) verified per its own provenance flags:
+  one agent re-read the thesis PDF from DSpace, one cloned ps-ppo with full history and read all
+  ~4.7k lines, one swept the field for independent pure-policy-vs-SH datapoints.** *Wang (Source
+  A)*: every core claim verified verbatim — the LR-anneal ablation (constant lr stuck ~0.55 vs
+  ~0.80 annealed, §3.1.4; the ONLY controlled single-variable ablation found anywhere in this
+  literature, decay constants admittedly untuned), the exact hyperparameter table, sparse terminal
+  reward, no recurrence (durations one-hot instead), the non-lockstep race-condition note,
+  both-players collection, 3v3 surrogate tuning. Corrections: "search bought ~12 points" is
+  arithmetic on a table with no stated N and no error bars, and Fig 4.1 reports ~0.85 vs SH for
+  what Table 4.1 scores at 0.786 — unreconciled in the thesis; the env-stepping-bottleneck quote
+  is about MCTS inference rollouts, not training collection; action count is ~495 and
+  "switch-by-species" was an inference. **New, missed by the briefing: Fig 4.1 digitized
+  (calibration self-validates against the thesis's stated 40M→0.80 / 150M→0.85 anchors) — winrate
+  vs SH ≈ 0.30 at 2M, crosses 0.50 at ~4M, 0.575 at 6M, 0.64 at 8M** — the reference gen4 agent,
+  with tuned hyperparameters and annealed lr, was at 0.575 at our exact budget; nearly all its
+  remaining gain was bought 6M→60M. Also: NO opponent pool — pure latest-vs-latest self-play, SH
+  the only external anchor, no pathologies reported; a curriculum negative result (k-Pokémon
+  specialist bootstrapping tried, "no significant improvements" over scratch 6v6); total PPO loss
+  ROSE all run (entropy + shrinking advantages — not a progress signal); eval determinism never
+  stated; Wang explicitly rejected Gen 1 as a format ("no real counters to strong Psychic-types").
+  *ps-ppo (Source B)*: the headline is real and understated — the committed ladder screenshot
+  shows gen9randombattle Elo 2102 / GXE 76.7% / Glicko-1 1725 ± 25, single-forward-pass inference
+  confirmed in code (sampling at temp 1.0, no search/damage calc), and the claim escalated
+  1600 → >1600 → >1900 in step with a live run. But **the briefing's calibration number — "Wang
+  MLP replication plateaued ~1100 Elo" — has ZERO support: no MLP exists anywhere in the repo or
+  its git history**; treat as anecdote. The >85%-vs-SH figure is unreproducible (no eval script at
+  HEAD, no methodology; training is mirror self-play and never touches SH), and the architecture
+  attribution is confounded with no ablation: the transformer run also differs by obs encoding,
+  BC-from-SH warm start, faint shaping (±0.1 vs ±1 terminal), and scale (>250M states, 2 days on a
+  3090; model is only 14.5M params — not a scale story). Transferable regardless: **BC-fit-to-the-
+  heuristic as an architecture screen** ("configurations that failed to imitate perfectly were
+  discarded"), a second no-opponent-pool datapoint, and post-BC per-zone LR multipliers (backbone
+  0.5×/0.1×, value head 2×). *In-repo checks (this session)*: all Showdown configs train FLAT lr
+  2.5e-4 (scratch12m pins `lr_anneal_steps: 0`; the anneal machinery exists, `ppo.py:419`) — the
+  2026-08-01 "lr test meaningless" rejection was about MAGNITUDE under per-minibatch advantage
+  normalization, so a schedule probe is arguably not covered by it, and MinAtar's "anneal cost
+  35%" is the in-repo counter-evidence to weigh. And **poke-env 0.15.0's SimpleHeuristicsPlayer
+  `_stat_estimation` carries the boost bug ps-ppo patched** (`boosts[stat] > 1`: a +1 boost falls
+  to the else branch and evaluates 2.0× — the +2 multiplier — instead of 1.5×): our numbers and
+  Wang's are vs the stock bot, ps-ppo's vs a patched one — comparability caveat, not a
+  mid-campaign change. *Field sweep (best of it)*: **VGC-Bench (arXiv 2506.10326; scratch
+  transformer PPO, 5M steps, gen9 VGC doubles, 100 games/cell, 5 seeds) — scratch self-play 0.48
+  vs SH, and BC-initialized variants 0.62–0.78: +25–30 points at matched budget, the largest
+  well-evidenced lever found anywhere.** Its 1-team payoff matrix is cyclic (DO scores 0.0 vs SH
+  while beating FP) — a single SH winrate is a projection, not a ranking; worth a README sentence
+  someday. pokejax: gen4randombattle scratch PPO ~0.55 vs SH (n=20, wide CI) at 378M JAX-engine
+  steps, plus a free bridge-bug checklist to audit ours against — stale `available_moves` for 1–2
+  turns after every switch (they measured 15.9% of turns affected), PP never decrementing in local
+  games, a sleep-turn off-by-one. Gen-1 specifics: Metamon measured SH at 16W–59L (~0.21) vs the
+  human ladder in Gen1OU — SH's WEAKEST format relative to humans; the NeurIPS 2025 PokéAgent
+  Challenge saw Foul Play (MCTS + Rust engine) win Gen9OU but place only #8 in Gen1OU, where pure-
+  policy RL took #1 and #2 — **the pure-policy handicap is smallest in exactly the format this
+  project chose**; and no public gen1randombattle RL agent was found — this appears to be the
+  first. Metamon self-play correction (nuances the PLAN §5.3 cite): the paper's naive latest-
+  checkpoint arm underdelivered, but post-paper, large DIVERSE agent-vs-agent datasets became the
+  main driver — the surviving lesson is naive-vs-diverse, not self-play-fails. Also: poke-env
+  issue #332 reports per-battle time growing over long runs. *Lever ranking by evidence*: (1) LR
+  annealing (controlled ablation, one source); (2) BC init (three independent sources, biggest
+  effect); (3) diverse-opponent self-play at scale; (4) train-opponent at least as strong as the
+  eval opponent; curriculum-over-heuristics reported not-helping twice. Encoder-ceiling read: the
+  briefing's architecture signal does not survive verification as evidence, but the BC-as-
+  capacity-screen idea folds into the already-queued BC-warm-start design session. **No decisions
+  taken — open for the maintainer, in order: (a) direction: 12M r512 extension vs an LR-anneal
+  probe (new candidate; needs pre-registration and the scope reconciliation above) vs straight to
+  the BC-warm-start design session; (b) push (local commits); (c) optional cheap bridge audit vs
+  the pokejax checklist.** Verification artifacts (thesis PDF, ps-ppo clone) live in the session
+  tmp dir — ephemeral; the briefing file stays untracked pending the direction discussion.
+
 - 2026-07-21 — Repo scaffolded: structure, README, CLAUDE.md, `.gitignore`, pinned `pyproject.toml`.
   Initial commit.
 - 2026-07-22 — Pushed to GitHub. Created `deep-rl` conda env; installed pinned deps and smoke-tested

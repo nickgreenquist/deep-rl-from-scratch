@@ -30,21 +30,29 @@ conflicts with the newest session-log entry, the log wins — say so and fix thi
   credited lever since capacity; at half the budget it nearly matches the base recipe's
   12M value. README closing paragraph amended per the pre-stated condition.
 
-- **Both hardening steps CLOSED (2026-08-02 later + overnight entries):** clone
-  final-vs-best measured a non-issue (12 evals, all within noise), and the heur_512
-  replication ran overnight — s1 0.411 / s2 0.432, pooled p_RL 0.417 ± 0.009 (spread
-  0.024). Retention rule fired RESOLVED: clone − p_RL = +0.036, z = 2.81. README amended
-  per the locked rule (wedge, milestone table, figure now 3 fixed-bot seeds); the n=1
-  caveat on the lineage's key number is retired.
+- **Prior-work verification COMPLETE (2026-08-03, three-Opus dig; full entry in the log):**
+  the maintainer's external briefing largely survives. Key calibrations: Wang's gen4 agent
+  (tuned + annealed lr) was at **0.575 vs SH at our 6M budget** (digitized Fig 4.1; crosses
+  0.5 at ~4M); our 0.39–0.42 is in-band for scratch PPO (VGC-Bench scratch SP 0.48 at 5M;
+  BC-initialized 0.62–0.78 — **BC init +25–30 pts at matched budget** is the best-evidenced
+  lever, LR annealing the only controlled ablation: 0.55→0.80). ps-ppo's "MLP stuck at 1100
+  Elo" claim has zero code support (anecdote); its 2102-Elo pure-policy result is real but
+  confounded (BC init + shaping + arch, no ablation). Gen-1 favorable: MCTS placed #8 in
+  Gen1OU (PokéAgent) where pure policy took #1/#2; SH is weakest vs humans in Gen 1 (~0.21).
+  Wang + ps-ppo both used NO opponent pool. Our poke-env 0.15.0 SH has a +1-boost stat bug
+  (evaluates as +2) — stock-vs-patched comparability caveat only. All Showdown runs train
+  flat lr (anneal machinery exists; the 2026-08-01 lr-test rejection was about magnitude,
+  not schedule).
 
 ## Next, in order
 
-1. **Maintainer decision:** 12M r512 extension (~5.2 h; would test whether the credited
-   SNR lever moves the ~0.42 plateau or only the approach speed — and a better base recipe
-   changes what the BC warm start grafts onto) vs straight to the BC-warm-start design
-   session. Extension needs its own pre-registration either way.
-2. Push decision — this session's commits (P3/P5 results, README amendment) are local.
-3. BC-warm-start design session (next chapter's opener, pre-registered meaning first).
+1. **Maintainer direction decision:** (a) 12M r512 extension (~5.2 h; plateau vs approach
+   speed) vs (b) LR-anneal probe (new candidate from verification; needs pre-registration
+   + reconciling MinAtar's "anneal cost 35%") vs (c) straight to the BC-warm-start design
+   session (now the best-evidenced big lever; ps-ppo's BC-as-architecture-screen folds in).
+2. Push decision — commits since `17ae11b` are local.
+3. Optional cheap check: audit our poke-env bridge vs the pokejax bug list (stale
+   `available_moves` after switches, PP not decrementing, sleep off-by-one).
 
 ## Watch items
 
