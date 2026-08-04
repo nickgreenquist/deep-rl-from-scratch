@@ -79,9 +79,8 @@ conflicts with the newest session-log entry, the log wins — say so and fix thi
 
 - Server: `cd showdown && node pokemon-showdown start --no-security` — now `simulator: 4`
   (gitignored file; re-set it if the checkout is ever recreated).
-- wandb defaults to offline as of `e53323a`. `runs/*/history.csv` via `extract_history.py`.
-- Stage-0 pattern for concurrent seeds; ≥5-min runs in the maintainer's terminal; clean tree
-  at every launch; commit docs BEFORE launches; handed-over command sets go in bash scripts
-  under the session tmp dir.
+- wandb offline since `e53323a`; `runs/*/history.csv` via `extract_history.py`. Stage-0 for
+  concurrent seeds; ≥5-min runs in the maintainer's terminal; clean tree at every launch;
+  commit docs BEFORE launches; handed-over command sets go in bash scripts under session tmp.
 - Run artifacts: `runs/showdown_r512_lra_s{0,1,2}` (P5b), `runs/showdown_scratch12m_s*`,
   clones `runs/bc_p4_512{,_40k}_s{0,1,2}`. `runs/showdown_tput_w*` are disposable.
