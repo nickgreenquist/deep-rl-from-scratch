@@ -215,6 +215,21 @@ lean, kept ready.
   (the (c) curve was collection-only); (2) go/no-go on the deferred decision-lockstep facade,
   gated on the already-named measurement (e) — the facade is the lever for long SINGLE runs
   (12M+/Wang-scale), lane count is the lever for probe science; (3) long-run hygiene:
+  **RESOLVED 2026-08-04 — see the session-log entry; both premises above are superseded.**
+  (1) needed NO code: the shared-server ceiling was `simulator: 1` in the gitignored
+  `showdown/config/config.js`, not the node process. At `simulator: 4` the shared server
+  scales to W = 6–8 and BEATS one-server-per-lane by 26–50%, so **server sharding is retired
+  as the unlock** and the port knob was never written. Lane scaling measured through the full
+  loop: W=3 → 659 steps/s per lane, W=6 → 556 (3→6 costs 15.6% per lane, returns +41%
+  aggregate); the ≥685 goal was NOT met. (2) is CLOSED as a **self-play-scoped** item —
+  batching opponent forwards is 2.04× on the component but only ~2.5% of the loop under
+  self-play and exactly 0% under `opponent: heuristics`; measurement (e) was never run and is
+  not the gate. Revisit only when a self-play chapter is designed, priced as a code-cost
+  tradeoff. **The finding that supersedes the framing above: collection-only benchmarks
+  overstate full-loop gain ~7× (29% collection → 3.7% end-to-end). The loop is
+  update-and-encode bound, not collection bound**, which contradicts the hardware note below,
+  the collection-loop architecture work, and the surrogate-tuning interest. Next item is
+  instrumenting the loop split (collect / encode / update / eval).
   `caffeinate`, and Wang's room-cleanup server hack if the poke-env-#332 slowdown signature ever
   appears. Engineering session under log-entry discipline — stated goals, no science claims.
   Calibration from the dig: Wang's 150M/4d is ~434 steps/s aggregate on 80 cloud workers (~5.4

@@ -1661,6 +1661,91 @@ order; earlier phases follow below.
   from-scratch `lr_anneal_steps: 12000000` run (annealed ckpts cannot be warm-extended;
   train.py refuses). Next per the standing order: throughput session, then the BC-warm-start
   design session (the anneal verdict slots into that package as a now-credited component).
+- 2026-08-04 (THROUGHPUT SESSION — the shared-server ceiling was `simulator: 1`, not the node
+  process; collection-only benchmarks overstate full-loop gain ~7x; the facade closes as a
+  self-play-scoped item; a startup-crash hazard found) — **Work item (1) resolved by a ONE-LINE
+  edit to a gitignored file: `showdown/config/config.js` `simulator: 1 -> 4`. The planned
+  server-port knob in the env seam and one-server-per-lane were never written; no `rl/` source
+  changed this session.** The 2026-07-29 measurement-(c) basis for "shared server peaks at W=2,
+  sharding is the unlock" had been taken against a single simulator child — the mechanism was
+  identified in the 2026-07-30 async review and `simulator: 4` named as the lever to try ahead of
+  any facade, but nobody had flipped it. **Shared-server collection, simulator: 4 (same machine,
+  14 logical / 10 performance cores, script defaults 128 battles/worker, 16 in flight): 2,237 /
+  5,246 / 7,096 / 9,233 / 11,024 / 11,313 / 9,966 decisions/s at W = 1/2/3/4/6/8/12** — monotone
+  through W=8, plateau at W=6-8 (6->8 buys 2.6%), turns over by W=12 (-12%, mean inference share
+  0.137). Against the simulator:1 shared curve that is **+81% at W=4 and +120% at W=8**, and it
+  **BEATS one-server-per-worker at simulator:1** (7,341 at W=4, 7,545 at W=8) **by 26-50%**.
+  Mean inference share now holds 0.19-0.23 across the curve where it used to collapse 0.26 ->
+  0.05. **Server sharding is RETIRED as the lane-scaling unlock** — it would have been strictly
+  worse than a config edit. W=1 reads low (2,237 vs 3,646 shared/simulator:1): cold-boot artifact,
+  same class as the recorded per-worker W=1 anomaly; crossover is W>=2.
+  **Full-loop lane scaling — the number the goal is actually denominated in** (150k-step lanes,
+  `configs/showdown_r512_tput.yaml` = the r512 recipe with only `total_steps` and `run_name`
+  changed, median of `time/steps_per_sec` with the first 10% dropped): **W=3 -> 659 steps/s per
+  lane (mean 638), 3/3 lanes complete; W=6 -> 556 per lane (mean 542), 5/6 complete.** Goal (i),
+  restore >=685 at 3-wide, **NOT met** (659, ~4% short). Goal (ii), lane scaling W=3-6 through the
+  full loop, **met**: 3->6 costs 15.6% per lane and returns +41% aggregate across the five that
+  ran (~+69% extrapolated to six) — a 3-seed probe takes ~19% longer at 6-wide but you can run two
+  at once, which is the hypothesis-turnover compounding the PLAN scope block wanted.
+  **THE FINDING, and it outranks everything else here: collection-only benchmarks overstate the
+  full-loop gain by ~7x.** `simulator: 4` bought ~29% collection-side at W=3 and **+3.7%
+  end-to-end** (P5b lanes averaged 615 steps/s; these averaged 638 — same recipe, same 3-wide,
+  same machine, only `simulator` differs). **The loop is update-and-encode bound, not collection
+  bound.** That contradicts a load-bearing Phase-5 planning assumption: the hardware note, the
+  collection-loop architecture work, and the interest in surrogate-task tuning all rest on
+  collection being the constraint. Highest-leverage optimization is now (1) the observation
+  encoder — our own Python, run per decision — and (2) the PPO update, the one component where a
+  GPU could plausibly matter at [512,512]. **Next item: instrument the loop split (collect /
+  encode / update / eval as separate timers).** Wang needed exactly this instrument and could not
+  get it from stock SB3: his stable-baselines3 fork is 8 commits and 7 are throughput
+  instrumentation (`record fps for rollout only; ignore train, eval`, `track rollout, train,
+  callback time separately`, `eval fps reporting in EvalCallback`, plus a later fix
+  `train_fps should * n_envs`) — `prior_work/wang_fork_diffs.md` line 3998ff.
+  **Decision-lockstep facade CLOSED — on reframing, not on a new measurement, and SCOPED not
+  permanent.** Prize 1 (batching opponent forwards) priced today at the real width, offline, no
+  server: **[512,512] batch-1 83.1 us/sample vs batch-8 41.4 us/sample = 2.04x**; at num_envs=8
+  that replaces 676 us of serial batch-1 opponent forwards with one 351 us batch-8 forward, saving
+  ~325 us of a ~13 ms vector step = **2.5% under self-play and EXACTLY 0% under
+  `opponent: heuristics`**, where seat 2 is scripted Python with no network in it. Every queued
+  run uses heuristics, so **the facade is a self-play-only item, not a throughput item.** Prize 2
+  (decoupling battles-in-flight from num_envs) is bounded by how much server-wait exists to hide,
+  and 29%-collection -> 3.7%-end-to-end says almost none — corroborating the recorded process
+  CPU/wall of 0.97 at 8 battles in flight. **CORRECTION TO THE RECORD:** the late-July
+  "at [512,512] batch-1 is compute-saturated, batching headroom ~zero" is measurably wrong — the
+  headroom is 2.04x. Right verdict, wrong arithmetic. The `[64,64]` hardcode in
+  `scripts/showdown_throughput.py` has now caused TWO misreads (that one, and this session's
+  collection-vs-full-loop overstatement); anything quoted from that script must carry its width.
+  Incidental: at [512,512], batch-2 costs MORE per sample (100.9 us) than batch-1 (83.1 us), a
+  BLAS matrix-vector to matrix-matrix path switch — micro-batching at very small N is
+  counterproductive here. **Revisit trigger:** when a self-play chapter is actually being
+  designed, priced as a code-cost tradeoff (2-4x the code on the shared collection seam) at that
+  recipe and hardware.
+  **A `num_envs` sweep {8,16,32} at constant `n_steps x num_envs` was designed and DROPPED before
+  running**, on three grounds: (a) it would run under `opponent: heuristics`, where prize 1 is
+  zero by construction, so it cannot test what it was meant to test; (b) holding the product
+  constant fixes the buffer at 4096 but shortens the per-env horizon — at a measured mean episode
+  length of 27.7 steps that is 18.5 -> 9.2 -> 4.6 episodes per env per rollout and boundary
+  truncation 5.4% -> 10.9% -> 21.7% at gamma 1.0 with terminal-only reward, a learning change
+  rather than a throughput isolation, and `n_steps=128` gives back one of the two things P5
+  changed (P5 moved rollout length AND batch together, 1024 -> 4096, and never isolated which half
+  carried the +0.037); (c) the proposed 1.3x closure bar had no cost basis — this repo derives its
+  thresholds (P5b's was 2*se_diff), and the real question is what gain justifies 2-4x the code on
+  the shared seam. **Standing point: you cannot vary `num_envs` without moving either the buffer
+  or the horizon — that coupling is exactly what the facade exists to break, so the sweep
+  demonstrates the facade's motivation while failing to price it.**
+  **STARTUP-CRASH HAZARD (new; affects every multi-seed launch).** W=6 lane s5 died with SIGSEGV
+  before writing a single log line or creating its run dir, and `tput_lanes.sh` printed "done"
+  over a 5-of-6 result. macOS crash report: `EXC_BAD_ACCESS` on the main thread in torch lazy
+  static init — `THPVariable__parse_to` -> `PythonArgParser` ctor -> `_PyUnicode_InternMortal` ->
+  `PyDict_SetDefaultRef`, bottoming at `PyEval_EvalCode`. **Not memory** (24 GB, 54% free). A
+  second related crash at 2026-08-03 23:45:34 during the P5b finals: SIGABRT in
+  `c10::InternedStrings::~InternedStrings()` under `__cxa_finalize_ranges` (libmalloc: pointer
+  freed was not allocated) — process TEARDOWN, after artifacts were written. **P5b results are
+  unaffected**: all three lanes carry ~214k-row histories and the finals came from separate eval
+  processes; pooled 0.4433 stands. **Mitigation required in every future launcher: stagger lane
+  starts, and assert all W run dirs exist with complete histories before reporting success** — the
+  failure mode is a pre-registered pooled read that silently becomes 2 seeds instead of 3.
+  Artifacts `runs/showdown_tput_w3_s{0,1,2}` and `runs/showdown_tput_w6_s{0..4}` are disposable.
 
 - 2026-07-21 — Repo scaffolded: structure, README, CLAUDE.md, `.gitignore`, pinned `pyproject.toml`.
   Initial commit.
