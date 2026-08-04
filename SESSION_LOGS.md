@@ -1619,6 +1619,27 @@ order; earlier phases follow below.
   stack.** P5b launched by the maintainer ~20:56 on `5074c1b` (3 seeds up, liftoff clean, the
   auto-tie server notice benign as before).
 
+- 2026-08-03 (latest+1: THROUGHPUT PRIORITIZED — the next chapter opens with a speed session,
+  before the BC design session; Wang's training speed demystified by arithmetic) — **Maintainer
+  decision: after the P5b read, a dedicated throughput session precedes the BC-warm-start design
+  session — cheaper steps compound into every later pre-registration (budget was itself a
+  credited lever). Goals recorded in the PLAN.md Phase 5 scope block.** The calibration that
+  motivated it: **Wang's 150M steps / 4 days is ~434 steps/s AGGREGATE on 80 cloud CPU workers**
+  (~5.4 steps/s/core; ~8.7 battles/s with both-perspective double-counting) — while the laptop's
+  live 3-wide campaign runs ~1,760 steps/s through the full training loop on ~3 of 14 cores.
+  Wang's scale was wall-clock and 2×-perspectives, not per-core speed; his 150M ≈ 3.5 days of
+  single-lane laptop time at current rates. Live utilization during P5b (ps snapshot): three
+  python lanes at 58–72% CPU each, node server group ~100% total (≈1 core) — consistent with the
+  2026-07-29 measurement-(c) knee (shared server peaks at W=2, declines after; per-worker servers
+  scaled to ~7.5k dec/s at W=4–8) and with the observed 685 → 587 per-run drop going 2-wide →
+  3-wide. Framing settled in-discussion: **server sharding is the UNLOCK, not the prize** —
+  direct gain on the 3-lane pattern is only +15–20% (undoing the shared-server regression), but
+  it is what lets lane count scale to the cheap 2–3× aggregate; the decision-lockstep facade
+  (gated on measurement (e)) remains the lever for long SINGLE runs; both-players collection is a
+  self-play-only 2× (a scripted opponent's seat is off-policy data for PPO). Ops note pinned in
+  STATUS: no `rl/` source edits until `lra_probe.sh` exits FULLY — its finals stage boots fresh
+  python that imports `rl`.
+
 - 2026-07-21 — Repo scaffolded: structure, README, CLAUDE.md, `.gitignore`, pinned `pyproject.toml`.
   Initial commit.
 - 2026-07-22 — Pushed to GitHub. Created `deep-rl` conda env; installed pinned deps and smoke-tested

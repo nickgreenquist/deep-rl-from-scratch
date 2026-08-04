@@ -10,17 +10,14 @@ conflicts with the newest session-log entry, the log wins — say so and fix thi
   diagnostic), every number verified against run artifacts. The shipped arc: all three arms
   converge on ~0.4 vs SimpleHeuristics; the BC clone at 0.453 locates the plateau
   training-side (one-directional caveat attached).
-- **Stop rule RATIFIED by the maintainer (2026-08-02 evening).** As adopted:
-  (1) M3 ships now; (2) P3 = post-ship analysis appendix, P5 = real training probe needing
-  its own pre-registration (entropy probe queued same tier); (3) the 0.5 bar stops being
-  chased under this recipe class — bar stays unmet and unmoved; 16×-budget from-scratch is
-  untested-not-excluded, deferred on cost; (4) BC-warm-start deferred to its own
-  pre-registered design session. Full wording in the 2026-08-02 write-up log entry.
+- **Stop rule RATIFIED (2026-08-02):** the 0.5 bar stops being chased under this recipe
+  class (unmet, unmoved; 16×-budget untested-not-excluded); training probes need their own
+  pre-registration. Full wording in the 2026-08-02 write-up log entry.
 - Milestone ladder: M1 PASSED 0.663 · M2 NOT passed (fixed-bot 12M pooled 0.417 ± 0.009,
   3 seeds, best seed 0.432; the 18M continuation's 0.432 reads as specialization) · M3
   complete and shipped.
-- Pushed through `17ae11b` 2026-08-03 (maintainer's go) — the milestone-3 section is
-  PUBLIC. Standing rule unchanged: ask before any future push.
+- Pushed through `957b4c1` 2026-08-03 (maintainer's go); milestone-3 + P3/P5 + the
+  verification fold are PUBLIC. Ask before any push; commits since are local.
 - **P3 COMPLETE (2026-08-03):** observable draw explains ~4% of outcome variance (CV R²
   0.0375, p < 0.005; lower bound) — the draw does not decide battles at species level.
 - **P5 CREDITED (2026-08-03):** rollout_steps 128→512 lifts the 6M win rate 0.355 → 0.392
@@ -51,10 +48,15 @@ conflicts with the newest session-log entry, the log wins — say so and fix thi
 
 ## Next, in order
 
-1. **P5b read when finals land** (~3 h from launch; per the locked config header).
-2. **BC-warm-start design session** — next chapter; design the stack (BC init + shaping +
-   anneal verdict) as one pre-registered package per the PLAN scope block.
-3. 12M flat-lr r512 extension decision — still open, untaken (interacts with P5b's result).
+1. **P5b read when finals land** (~3 h from launch; per the locked config header). No `rl/`
+   source edits until `lra_probe.sh` exits fully — its finals stage imports `rl` fresh.
+2. **Throughput session (maintainer-directed 2026-08-03, goals in the PLAN scope block):**
+   server-port knob + one server per lane (measured basis: shared server peaks at W=2;
+   per-server ~7.5k dec/s at W=4–8), lane-scaling W=3–6 through the full loop, facade
+   go/no-go via measurement (e). Cheap steps compound into every later pre-registration.
+3. **BC-warm-start design session** — the stack (BC init + shaping + anneal verdict) as one
+   pre-registered package per the PLAN scope block.
+4. 12M flat-lr r512 extension decision — still open (interacts with P5b and the facade).
 
 ## Watch items
 

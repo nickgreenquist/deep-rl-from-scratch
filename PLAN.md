@@ -193,12 +193,32 @@ lean, kept ready.
   2025: MCTS #8 in Gen1OU where pure policies took #1/#2). Standing consequence now: keep the value
   head healthy — search truncates rollouts at leaves with V.
 - **"Pure self-play" is retired as an identity constraint.** The capstone agent may use teachers,
-  shaping, and offline data. Concretely in scope for the BC-warm-start design session (the next
-  chapter): BC init from `SimpleHeuristicsPlayer` (VGC-Bench: +25–30 pts vs SH at a matched 5M
-  budget; ps-ppo used BC-fit-to-the-heuristic as an architecture screen), faint-based reward
-  shaping (ps-ppo: ±0.1 against the ±1 terminal; potential-based if policy invariance is wanted;
-  their post-hoc-alignment off-by-one is the known trap), and the P5b LR-anneal verdict. Design the
+  shaping, and offline data. Concretely in scope for the BC-warm-start design session: BC init
+  from `SimpleHeuristicsPlayer` (VGC-Bench: +25–30 pts vs SH at a matched 5M budget; ps-ppo used
+  BC-fit-to-the-heuristic as an architecture screen), faint-based reward shaping (ps-ppo: ±0.1
+  against the ±1 terminal; potential-based if policy invariance is wanted; their
+  post-hoc-alignment off-by-one is the known trap), and the P5b LR-anneal verdict. Design the
   recipe as a pre-registered stack, not one lever at a time.
+- **Speed before the next science chapter (directed 2026-08-03).** After the P5b read, a
+  throughput session precedes the BC-warm-start design session. The rationale is meta-level
+  compounding: cheaper experiments raise hypothesis turnover — more levers tried per week, each
+  verdict steering the next — which compounds in a way raw steps/s cannot (that only tops out at
+  the machine ceiling). Budget was itself a credited lever, so cheaper steps also discount every
+  later pre-registration. Measured basis
+  (2026-07-29 measurement (c)): one shared Showdown server peaks at TWO workers and declines
+  (the Node process saturates; the live 3-wide campaign uses ~3 of 14 cores, per-run throughput
+  685 → 587), while one-server-per-worker scaled to ~7.5k decisions/s at W = 4–8. Work items:
+  (1) a server-port knob in the env seam + one Showdown server per lane — goal: restore
+  ≥685 steps/s per run at 3-wide and measure lane scaling W = 3–6 through the FULL training loop
+  (the (c) curve was collection-only); (2) go/no-go on the deferred decision-lockstep facade,
+  gated on the already-named measurement (e) — the facade is the lever for long SINGLE runs
+  (12M+/Wang-scale), lane count is the lever for probe science; (3) long-run hygiene:
+  `caffeinate`, and Wang's room-cleanup server hack if the poke-env-#332 slowdown signature ever
+  appears. Engineering session under log-entry discipline — stated goals, no science claims.
+  Calibration from the dig: Wang's 150M/4d is ~434 steps/s aggregate on 80 cloud workers (~5.4
+  per core, both-perspective counting); the laptop already does ~1,760 full-loop. His scale is
+  reachable by wall-clock, not hardware. Both-players collection is a self-play-only 2× (a
+  scripted opponent's seat is off-policy data) — note for self-play chapters, not this one.
 
 **Hardware (revised 2026-07-28 — the "rented cloud GPU" line was inherited from the Procgen-era
 capstone and did not survive contact with the repo's own measurements; see the session log).**
