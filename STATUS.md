@@ -45,25 +45,48 @@ conflicts with the newest session-log entry, the log wins — say so and fix thi
   anneal ablation is now replicated in-repo by P5b). MCTS is an OPEN follow-up phase; "pure
   self-play" retired as an identity constraint. Sources in `prior_work/`.
 
+- **LOOP SPLIT MEASURED (2026-08-04, instrument landed in `rl/train.py`, always-on):**
+  **collect 94.5–95.0% of the loop, update 5.0–5.5%, eval negligible** — consistent across six
+  lanes at both 3- and 6-wide. **This overturns the "update-and-encode bound" half of the
+  morning's inference: a GPU at [512,512] buys at most ~5%.** It reconciles the 29%→3.7% puzzle
+  — `showdown_throughput.py` measures server-side decisions/s, so the server is a small slice of
+  collect and our own encode + inference is the bulk. All headroom is inside collect.
+- **P6 RUNNING (launched 2026-08-04 ~18:26):** flat vs annealed at 12M on r512, 3 seeds/arm,
+  6-wide, both from scratch. Pre-registration committed in `configs/showdown_r512_12m.yaml`.
+  524–548 steps/s per lane (inside R0). Result pending.
+
 ## Next, in order
 
-1. **Loop-split instrumentation** — collect / encode / update / eval as separate timers, so
-   the update-and-encode split is measured rather than inferred. Highest-leverage targets in
-   order: the observation encoder (our Python, per decision), then the PPO update (the one
-   place a GPU could matter at [512,512]). Wang needed the same instrument and could not get
-   it from stock SB3 (7 of his 8 fork commits); see the 2026-08-04 log entry.
-2. **BC-warm-start design session** — the stack (BC init + shaping + anneal verdict) as one
+1. **P6 finals + read** — run `p6_finals.sh` (1000 battles/seed, locked protocol) once all six
+   lanes exit, then `p6_read.py`. Both are staged in the session tmp dir. Do NOT run them while
+   training is live; they need the same server.
+2. **Decompose collect Showdown-side** — NOW TRIGGERED by the split above. Re-run measurement
+   (a) (`scripts/showdown_throughput.py a`), which decomposes per-turn encode vs inference vs
+   env gap but last ran on the 10-dim PLACEHOLDER encoder, before the real 611-dim one landed
+   2026-07-30. Script change, not a seam change — do NOT put an encode timer in shared code
+   (`embed_battle` lives inside `ShowdownSingles`; a `hasattr` branch in `rl/train.py` for one
+   env is the pattern the masking contract bans).
+3. **BC-warm-start design session** — the stack (BC init + shaping + anneal verdict) as one
    pre-registered package per the PLAN scope block. The anneal is now a credited component.
-3. 12M r512 extension decision — still open. If taken, the annealed arm is from-scratch, and
-   flat-vs-annealed at 12M is the natural framing. ~5.2 h at 3-wide post-`simulator: 4`.
 
 ## Watch items
 
+- **CONCURRENT LANES MUST HAVE DISTINCT SEEDS (2026-08-04) — including across arms of one
+  experiment.** `rl/common/seeding.py` seeds the global `random` module, and poke-env derives
+  player usernames from it, so same-seed concurrent lanes request identical Showdown usernames.
+  The loser gets `|nametaken|`, surfacing as the misleading `TimeoutError: Agent is not
+  challenging` at first `reset`. Killed all three P6 annealed lanes; they were relaunched on
+  seeds 3,4,5.
 - **Startup-crash hazard (2026-08-04):** a lane can die with SIGSEGV in torch lazy static
   init before writing any log or run dir, and a naive launcher reports success over a
   short-handed result (hit W=6: 5 of 6). Not memory. A related SIGABRT at teardown hit the
   P5b finals (results unaffected). **Every launcher must stagger starts and assert all W run
   dirs exist with complete histories before reporting done.**
+- **Liveness assertions must check progress, not artifacts (2026-08-04):** `_write_run_metadata`
+  writes the run dir before the first `reset`, so "the dir exists" is true for a lane that never
+  trains — it reported success over three dead P6 lanes. Also: **shell loops must run under
+  `bash`, not zsh** — unquoted `$VAR` does not word-split in zsh, and a watchdog written that way
+  declared all six lanes dead on its first tick.
 - s0 late regression pattern; P5b's s0 was also the weak seed (0.416) — watch seed spread.
 - Pre-existing test flake: `test_full_episode_contract_against_live_server` fails only when
   the whole suite runs with a server up; passes alone (2026-08-01).

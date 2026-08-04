@@ -1747,6 +1747,65 @@ order; earlier phases follow below.
   failure mode is a pre-registered pooled read that silently becomes 2 seeds instead of 3.
   Artifacts `runs/showdown_tput_w3_s{0,1,2}` and `runs/showdown_tput_w6_s{0..4}` are disposable.
 
+- 2026-08-04 (later: loop-split instrument LANDED and it overturns half of this morning's
+  inference — the update is 5.4% of the loop, not a bottleneck; P6 12M launched; a poke-env
+  USERNAME COLLISION killed an entire arm and is now a standing constraint on concurrent runs) —
+  **Instrument (`rl/train.py`, ~15 lines, both loops, always-on):** `time/collect_sec`,
+  `time/update_sec`, `time/eval_sec` alongside `time/steps_per_sec`. Maintainer answered the two
+  open questions: always-on (a flag is speculative configurability at microseconds of overhead)
+  and additive metric names are fine (the locked-names rule prohibits renames, not additions) —
+  the three names are now IN the CLAUDE.md invariant list. **Design correction vs the handoff's
+  spec:** it called for "three `perf_counter` pairs per rollout (NOT per step)", but the loop is
+  per-step with `agent.update()` called every step and returning truthy metrics only when the
+  rollout drains, so the timers are per-step accumulators FLUSHED at the rollout boundary (vector
+  path) or the episode boundary (scalar path, which has no rollout). Same output, ~4 extra
+  `perf_counter` calls per step against a ~13 ms vector step. `tests/test_loop_timers.py` pins
+  both paths; the load-bearing assertion is `collect + update <= wall clock`, which is what
+  catches a missing accumulator reset. 288 tests green.
+  **THE READ, first numbers, and it is not what this morning inferred.** Six live 12M lanes,
+  measured at both 3-wide and 6-wide, every lane agreeing to within 0.5 pt:
+  **collect (act + env.step) 94.5-95.0% of the loop, update (PPO epochs) 5.0-5.5%, eval
+  negligible** (6.7-7.0 s vs 0.37-0.40 s per rollout at 6-wide; 5.52 s vs 0.32 s at 3-wide).
+  This morning's entry concluded the loop is "update-and-encode bound"; **the update half is
+  wrong — a GPU at [512,512] can buy at most ~5% end-to-end.** It also RECONCILES the 29%-
+  collection-to-3.7%-end-to-end puzzle rather than contradicting it: `showdown_throughput.py`
+  measures server-side decisions/s, which must therefore be a small slice of the collect phase,
+  with our own Python encode + action inference the bulk of it. **Everything worth optimizing is
+  inside collect**, which bundles server wait, `embed_battle`, and inference — so the handoff's
+  step 2 (decompose collect Showdown-side by re-running measurement (a) at the real 611-dim
+  encoder) is now TRIGGERED, and waits only on the lanes finishing, since it would load the same
+  server.
+  **POKE-ENV USERNAME COLLISION — an arm-killing constraint on every future concurrent launch.**
+  P6's first launch put both arms on seeds 0,1,2. All three annealed lanes died ~30 s in.
+  Mechanism: `rl/common/seeding.py` seeds the GLOBAL `random` module with `cfg.seed`, and
+  poke-env derives each player's username from that same RNG
+  (`ps_client/account_configuration.py`: `random.choices` over a 5-char space), so **two
+  concurrent lanes at the same seed request identical Showdown usernames.** The flat arm claimed
+  them first; the annealed lanes got `|nametaken|`, which surfaces as poke-env's badly misleading
+  `TimeoutError: Agent is not challenging` at the first `reset` — the message names the challenge
+  handshake and says nothing about login. Every prior multi-lane run in this repo used distinct
+  seeds across ALL lanes, which is why nothing caught it. **Standing rule: concurrent lanes must
+  carry distinct `--seed` values, full stop — including across arms of the same experiment.**
+  Fix taken: annealed arm relaunched on seeds 3,4,5, recorded in the config. Cost to the read —
+  the arms are UNPAIRED in seed value; the PRIMARY is a pooled 3000-vs-3000 proportion test that
+  never assumed pairing, so it stands, but per-seed cross-arm comparison is meaningless and the
+  known s0-weak-seed pattern cannot be matched out.
+  **A SECOND vacuous-assertion lesson, on top of this morning's.** The launcher asserted run-dir
+  existence at +180 s and reported success over three dead lanes: `_write_run_metadata` writes
+  `config.yaml`/`meta.yaml`/`wandb/` BEFORE the first `reset`, so the directory exists for a lane
+  that never trains. The replacement checks battle progress and greps for
+  `nametaken|to be logged in|not challenging`. Related: a watchdog written with unquoted `$PIDS`
+  loops declared all six lanes dead on its first tick — **zsh does not word-split unquoted
+  variables**, so the pid loop ran once over the whole string and every `kill -0` failed. Any
+  multi-item shell loop in this repo must run under `bash`, not the default zsh.
+  **P6 LAUNCHED (pre-registered in `configs/showdown_r512_12m.yaml`, committed before launch):**
+  flat vs annealed at 12M on the r512 recipe, 3 seeds per arm, 6-wide, both arms from scratch
+  (an annealed checkpoint cannot be warm-extended, and `runs/showdown_scratch12m_s*` is not a
+  control — it predates P5 at `rollout_steps: 128`). PRIMARY: pooled 3-seed finals, 1000
+  battles/seed, ties as non-wins, credited iff delta >= +0.025 AND >= 2*se_diff. Throughput
+  524-548 steps/s per lane, inside the R0 gate. **RESULT PENDING** — amend this entry when the
+  finals land.
+
 - 2026-07-21 — Repo scaffolded: structure, README, CLAUDE.md, `.gitignore`, pinned `pyproject.toml`.
   Initial commit.
 - 2026-07-22 — Pushed to GitHub. Created `deep-rl` conda env; installed pinned deps and smoke-tested
