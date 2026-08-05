@@ -53,8 +53,11 @@ conflicts with the newest session-log entry, the log wins — say so and fix thi
    Script change, NOT a seam change — an encode timer must not go in shared code (`embed_battle`
    is inside `ShowdownSingles`; a `hasattr` branch in `rl/train.py` is what the masking contract
    bans).
-3. **BC-warm-start design session** — the stack (BC init + shaping + anneal verdict) as one
-   pre-registered package per the PLAN scope block. The anneal is now a credited component.
+3. **`DESIGN_P7.md` — PROPOSED, awaiting team review; do NOT ratify before P6 reads.** The
+   BC-warm-start package (BC init + staged unfreeze + faint shaping + distributional value),
+   aimed where P4 measured the bottleneck. **§10 may dominate it: a verified 109,147-replay
+   `gen1randombattle` human corpus exists** — human demos are not bounded by the 0.489
+   SH-imitation ceiling that caps every other arm. Phase placement is the open question.
 
 ## Watch items
 
