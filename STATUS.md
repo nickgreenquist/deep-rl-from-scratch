@@ -38,9 +38,23 @@ conflicts with the newest session-log entry, the log wins — say so and fix thi
   scratch PPO; **BC-init +25–30 pts at matched budget** is the best-evidenced lever. Action
   space CLOSED as a lever (ps-ppo 14, Metamon 9, both positional; Wang's 494-identity outlier
   needed MCTS). Encoder is the live question — see the ps-ppo move-token fields.
-- **P6 RUNNING (launched 2026-08-04 ~18:26):** flat vs annealed at 12M on r512, 3 seeds/arm,
-  6-wide, both from scratch. Pre-registration committed in `configs/showdown_r512_12m.yaml`.
-  524–548 steps/s per lane (inside R0). Result pending.
+- **P6 COMPLETE + CREDITED (2026-08-05):** flat vs annealed at 12M on r512, 6/6 lanes, R0 passed.
+  **Annealed 0.4607 pooled (0.449/0.451/0.482) vs flat 0.4330 (0.425/0.424/0.450); delta +0.0277,
+  z = +2.16 — the anneal is credited at 12M, but narrowly** (P5b cleared its line by 2×; direction
+  replicates, magnitude does not). Flat 6M→12M is +0.0407, so budget bought as much as the anneal.
+  **0.4607 is the first RL result past the BC clone (0.453) and sits 0.028 under the 0.489
+  SH-mirror ceiling** — it closes P4's training-side gap and undercuts DESIGN_P7's premise
+  (recorded there as revision 4). Mechanism: `approx_kl` halved on the annealed arm, entropy did
+  NOT separate — contrary to P5b's expected tell.
+
+## THIS REPO IS BEING ARCHIVED (2026-08-05)
+
+The from-scratch mandate is complete: DQN, PPO and SAC are implemented, benchmarked and shipped.
+**The Pokémon Showdown capstone moves to `/Users/nickgreenquist/Documents/Projects/pokemon-showdown-rl`**,
+which starts without the no-RL-libraries rule — that constraint has no remaining payoff and the
+capstone goal is now simply the strongest agent achievable. See `start.md` in that repo for the
+bootstrap brief, the carry-over manifest, the distilled findings and a 7-step port verification.
+P6 was the last experiment run here.
 
 ## Next, in order
 

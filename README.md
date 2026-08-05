@@ -742,12 +742,34 @@ to 0.443 ± 0.009 (3 seeds × 1000 battles), the first result on this board
 above the ~0.42 plateau every earlier arm converged to, and within noise
 of the BC clone's 0.453. The anneal joins the recipe for any 12M
 extension, which must run from scratch — an annealed checkpoint cannot be
-warm-extended. The genuinely new door
-is warm-starting PPO from the clone, which sits above every RL policy on
-this board — deliberately deferred: it changes what "from scratch" means
-for every number that follows, and deciding *in advance* what a 0.5 from a
-BC init would mean is exactly the kind of question this project
-pre-registers rather than answers after seeing the number.
+warm-extended.
+
+That extension has now run, from scratch, both arms: at 12M the annealed
+recipe reaches **0.461** pooled (3 seeds × 1000 battles, per seed
+0.449/0.451/0.482) against **0.433** for the same recipe at flat learning
+rate. The anneal is credited again — delta +0.028, z = 2.16 — but it clears
+the pre-registered line by 0.003 where the 6M read cleared it by double.
+The direction replicates; the magnitude does not, which is the shape you
+would expect if annealing mostly buys a cleaner endpoint rather than a
+better trajectory. Doubling the budget at flat learning rate bought +0.041
+on its own, about as much as the schedule did.
+
+The mechanism read is the part worth keeping: across the run the annealed
+arm halved its per-update policy movement (`approx_kl` 0.0044 → 0.0027)
+while the flat arm did not move at all — the schedule is demonstrably
+engaged — yet **policy entropy did not separate between the arms**, which
+is what the 6M pre-registration had expected as its tell. The anneal
+shrinks step size, not the action distribution.
+
+At 0.461, PPO has finally passed the behavioral clone (0.453) that had sat
+above every RL policy on this board, and stands 0.028 short of the measured
+SimpleHeuristics mirror baseline of 0.489 — the ceiling any imitator of
+that bot is bounded by. The plateau this project spent three milestones
+characterising was training-side, exactly as the cloning diagnostic
+predicted, and training-side work closed it. What remains above 0.489
+cannot come from imitating this teacher, which is where the capstone goes
+next — in its own repository, and without the from-scratch constraint that
+this one was built to honour.
 
 ## Setup
 

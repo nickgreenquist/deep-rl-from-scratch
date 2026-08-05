@@ -1803,8 +1803,39 @@ order; earlier phases follow below.
   (an annealed checkpoint cannot be warm-extended, and `runs/showdown_scratch12m_s*` is not a
   control — it predates P5 at `rollout_steps: 128`). PRIMARY: pooled 3-seed finals, 1000
   battles/seed, ties as non-wins, credited iff delta >= +0.025 AND >= 2*se_diff. Throughput
-  524-548 steps/s per lane, inside the R0 gate. **RESULT PENDING** — amend this entry when the
-  finals land.
+  524-548 steps/s per lane, inside the R0 gate.
+  **P6 RESULT (2026-08-05 ~02:30): 6/6 lanes completed the full 12M — a clean sweep after this
+  session's collision killed an arm and last week's W=6 probe lost a lane to SIGSEGV. R0 gates
+  PASSED on all six** (entropy 0.244-0.289; ties 1.0-2.4%; steps/s 501-506, the tightest spread
+  yet recorded). **PRIMARY: annealed-12M pooled 1382/3000 = 0.4607 (per seed 0.449/0.451/0.482)
+  vs flat-12M 1299/3000 = 0.4330 (0.425/0.424/0.450); delta +0.0277, se_diff 0.0128, z = +2.16,
+  2*se_diff = 0.0257. THE ANNEAL IS CREDITED AT 12M — but narrowly**, clearing +0.025 by 0.0027
+  and 2*se_diff by 0.0020, where P5b cleared its line by 2x. **The direction replicates; the
+  magnitude does not** (+0.051 at 6M vs +0.028 at 12M), which is the expected shape if annealing
+  mostly buys a cleaner endpoint rather than a better trajectory.
+  SECONDARY: flat 6M -> 12M is **+0.0407** (0.3923 -> 0.4330) — doubling the budget on the flat
+  recipe buys about as much as the anneal does, which cuts against the archive prior (VGC-Bench
+  0.48 at 5M, pokejax ~0.55 at ~378M) that step count buys almost nothing at this scale.
+  Annealed 6M -> 12M is +0.0174, confounded exactly as pre-registered (a 12M anneal is a SHALLOWER
+  schedule, not merely a longer one).
+  **THE CONSEQUENCE THAT OUTRANKS THE VERDICT: 0.4607 is the first RL result in this project to
+  clear the BC clone (0.453), and it sits only 0.028 below the measured SH-vs-SH mirror baseline
+  of 0.489.** P4's framing — the plateau is training-side, RL sits below a representable
+  supervised policy — has been closed by training-side work, as P4 predicted. It also **undercuts
+  DESIGN_P7's premise**: P7a's BC-from-SH warm start was designed to exploit a clone-vs-RL gap
+  that no longer exists, and warm-starting from 0.453 would now start BEHIND the RL policy.
+  Recorded in DESIGN_P7.md as revision 4; P7b (faint shaping) and P7c (distributional value) are
+  unaffected, and §10 (the 109k-replay human corpus) is the only remaining proposal whose ceiling
+  is not 0.489.
+  MECHANISM (recorded in-flight): `approx_kl` HALVED on the annealed arm across the run
+  (0.0044 at 2-4M -> 0.0027 at 6-8M) while the flat arm held flat (0.0058 -> 0.0057) — the
+  schedule is demonstrably engaged. **Entropy did NOT separate** (0.284 flat vs 0.275 annealed at
+  6-8M), contrary to P5b's pre-registration, which expected a frozen-entropy signature as the
+  tell. The anneal shrinks step size, not the action distribution. Loop split held at
+  **94.8% collect / 5.2% update** on all six lanes for the whole 12M.
+  Artifacts: `runs/showdown_r512_{12m_s0,12m_s1,12m_s2,lra12m_s3,lra12m_s4,lra12m_s5}`
+  (~425-431k history rows each); finals JSON under the session tmp dir's `finals_shim/`.
+  **This is the last experiment run in this repo** — the capstone moves to `pokemon-showdown-rl`.
 
 - 2026-08-04 (latest: ACTION SPACE CLOSED as a lever; ps-ppo read at the source and it corrects
   two claims this repo had recorded; the encoder fix we derived turns out to be what ps-ppo
