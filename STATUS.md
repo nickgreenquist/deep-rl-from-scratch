@@ -46,8 +46,10 @@ staying green for the life of the project.
 
 ## Operational
 
-- Env: `/opt/anaconda3/envs/deep-rl` (Python 3.13). Never `base` or `pytorch_env`.
-- Tests: `/opt/anaconda3/envs/deep-rl/bin/pytest tests/ -q` from the repo root.
+- Env: `/opt/anaconda3/envs/deep-rl-from-scratch` (Python 3.13). Never `base` or `pytorch_env`.
+  Dedicated as of 2026-08-05 — this repo ships a top-level `rl` package and must not share an env
+  with another project that does, or one silently imports the other.
+- Tests: `/opt/anaconda3/envs/deep-rl-from-scratch/bin/pytest tests/ -q` from the repo root.
 - Runs: `python -m rl.train --config configs/<run>.yaml`. Anything over ~5 minutes goes in the
   maintainer's terminal, not through Claude.
 - wandb offline since `e53323a`; `runs/*/history.csv` via `scripts/extract_history.py`.

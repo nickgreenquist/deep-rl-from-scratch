@@ -17,10 +17,10 @@ From-scratch deep RL in PyTorch, built as a portfolio piece over multiple months
 
 ## Development environment
 
-- **Always run in the `deep-rl` conda env** (`/opt/anaconda3/envs/deep-rl`, Python 3.13): `conda activate deep-rl`, or call `/opt/anaconda3/envs/deep-rl/bin/python` / `.../bin/pytest` directly. Never use `base` or `pytorch_env` — the latter belongs to an unrelated project.
+- **Always run in the `deep-rl-from-scratch` conda env** (`/opt/anaconda3/envs/deep-rl-from-scratch`, Python 3.13): `conda activate deep-rl-from-scratch`, or call `/opt/anaconda3/envs/deep-rl-from-scratch/bin/python` / `.../bin/pytest` directly. Never use `base` or `pytorch_env` — the latter belongs to an unrelated project. **This repo owns a top-level package named `rl`, so it must not share an env with another project that does the same; the first `.pth` alphabetically wins and the loser is imported silently from the wrong tree.**
 - The repo is installed editable in that env, so `import rl` and `python -m rl.train` work as-is; tests run with `pytest tests/` from the repo root.
 - Dependency changes go through `pyproject.toml` with exact pins, then `pip install -e ".[dev]"` — no ad-hoc `pip install`, no `conda install` into the env.
-- Recreate from scratch if needed: `conda create -y -n deep-rl python=3.13`, then `pip install -e ".[dev]"` in it.
+- Recreate from scratch if needed: `conda create -y -n deep-rl-from-scratch python=3.13`, then `pip install -e ".[dev]"` in it. Verified 2026-08-05: a clean env from this `pyproject.toml` installs 65 packages and runs 278/278 green.
 
 ## Architecture invariants
 
