@@ -4,103 +4,77 @@ Current-state board. Rewritten in place (never appended) as work lands — updat
 same commit that appends a `SESSION_LOGS.md` entry; hard cap ~80 lines. If this file
 conflicts with the newest session-log entry, the log wins — say so and fix this file.
 
-## Where we are (updated 2026-08-04)
+## Where we are (updated 2026-08-05)
 
-- **Milestone-3 write-up SHIPPED**: README Phase-5 section (milestones 1–3 + the cloning
-  diagnostic), numbers verified against run artifacts. All three arms converge on ~0.4 vs
-  SimpleHeuristics; the BC clone at 0.453 locates the plateau training-side. Ladder: M1 PASSED
-  0.663 · M2 NOT passed (fixed-bot 12M pooled 0.417 ± 0.009) · M3 shipped, pushed `422f9ee`.
-- **Stop rule RATIFIED (2026-08-02):** the 0.5 bar stops being chased under this recipe
-  class; training probes need their own pre-registration. Wording in the 2026-08-02 entry.
-- **P3 COMPLETE (2026-08-03):** observable draw explains ~4% of outcome variance (CV R²
-  0.0375, p < 0.005; lower bound) — the draw does not decide battles at species level.
-- **P5 CREDITED (2026-08-03):** rollout_steps 128→512 lifts the 6M win rate 0.355 → 0.392
-  pooled (z = 3.0). Rollout length and batch size moved together; neither was isolated.
-- **P5b CREDITED (2026-08-04):** LR anneal (linear 2.5e-4 → 0 over 6M) on r512 — pooled
-  **0.4433 ± 0.0091** vs control 0.3923 ± 0.0089, delta +0.051 (2× the credit line, z ≈ 4.0);
-  per seed 0.416/0.468/0.446. First result above the ~0.42 plateau; beats 12M flat-lr (0.417)
-  at half budget; within noise of the BC clone (0.453). README amended. Annealed ckpts cannot
-  be warm-extended — any 12M anneal arm is from-scratch `lr_anneal_steps: 12000000`.
-- **THROUGHPUT (2026-08-04), no `rl/` source changed.** `simulator: 1 → 4` in gitignored
-  `showdown/config/config.js` is the whole of it: +81% collection at W=4, beats
-  one-server-per-lane by 26–50%, **server sharding RETIRED**. Full loop W=3 → 659 steps/s per
-  lane, W=6 → 556; the ≥685 goal NOT met (~4% short), lane scaling met. Curve in the log entry.
-- **LOOP SPLIT MEASURED (2026-08-04; instrument in `rl/train.py`, always-on):** **collect
-  94.5–95.0%, update 5.0–5.5%, eval negligible** — six lanes, 3- and 6-wide, all agreeing.
-  **Supersedes the morning's "update-and-encode bound" inference: the update is not a
-  bottleneck and a GPU at [512,512] buys at most ~5%.** Reconciles 29%-collection →
-  3.7%-end-to-end: `showdown_throughput.py` measures server-side decisions/s, a small slice of
-  collect; our encode + inference is the bulk. **All headroom is in collect** — hence next-2.
-- **Facade CLOSED (2026-08-04), self-play-scoped.** Prize 1 is 2.04× but only 2.5% under
-  self-play and **0% under `opponent: heuristics`** (every queued run). The `[64,64]` hardcode
-  in `showdown_throughput.py` has caused two misreads — quote it only with its width.
-- **Prior work + scope (2026-08-03/04, PLAN.md + `prior_work/`):** our 0.39–0.42 is in-band for
-  scratch PPO; **BC-init +25–30 pts at matched budget** is the best-evidenced lever. Action
-  space CLOSED as a lever (ps-ppo 14, Metamon 9, both positional; Wang's 494-identity outlier
-  needed MCTS). Encoder is the live question — see the ps-ppo move-token fields.
-- **P6 COMPLETE + CREDITED (2026-08-05):** flat vs annealed at 12M on r512, 6/6 lanes, R0 passed.
-  **Annealed 0.4607 pooled (0.449/0.451/0.482) vs flat 0.4330 (0.425/0.424/0.450); delta +0.0277,
-  z = +2.16 — the anneal is credited at 12M, but narrowly** (P5b cleared its line by 2×; direction
-  replicates, magnitude does not). Flat 6M→12M is +0.0407, so budget bought as much as the anneal.
-  **0.4607 is the first RL result past the BC clone (0.453) and sits 0.028 under the 0.489
-  SH-mirror ceiling** — it closes P4's training-side gap and undercuts DESIGN_P7's premise
-  (recorded there as revision 4). Mechanism: `approx_kl` halved on the annealed arm, entropy did
-  NOT separate — contrary to P5b's expected tell.
+**This repo is experimentally complete. No runs remain.** The from-scratch mandate is done:
+DQN, PPO and SAC implemented, benchmarked and shipped on a shared harness. The Pokémon
+Showdown capstone has **moved** to `/Users/nickgreenquist/Documents/Projects/pokemon-showdown-rl`,
+which starts without the no-RL-libraries rule. The remaining work here is **cleanup only**,
+specified in `CAPSTONE_REMOVAL.md`.
 
-## THIS REPO IS BEING ARCHIVED (2026-08-05)
+- **P6 COMPLETE + CREDITED (2026-08-05) — the last experiment run here.** Flat vs annealed LR
+  at 12M on r512, 6/6 lanes, R0 passed. Annealed pooled **0.4607** (0.449/0.451/0.482) vs flat
+  **0.4330** (0.425/0.424/0.450); delta +0.0277, z = 2.16 battle-level. **Credited, but it
+  clears the pre-registered line by 0.003 where P5b cleared by double**; at seed level (n=3/arm)
+  Welch t ≈ 2.03, p ≈ 0.12. **0.4607 is the first RL result past the BC clone (0.453)** and sits
+  0.028 under the 0.489 SH-mirror ceiling. Flat 6M→12M is +0.0407, so budget bought as much as
+  the anneal. **Full read: the P6 entry in `SESSION_LOGS.md`** — amended in place on the
+  pre-registration entry (it has no `- 2026-08-05` bullet, so grep for `P6 RESULT`, not the date).
+- Final ladder: M1 0.663 PASSED · M2 not passed · M3 shipped (`422f9ee`) · P3 complete (draw ≈4%
+  of outcome variance) · P5 +0.037 · P5b +0.051 · P6 +0.028, all credited.
+- **Stop rule RATIFIED (2026-08-02):** the 0.5 bar is not chased under this recipe class.
 
-The from-scratch mandate is complete: DQN, PPO and SAC are implemented, benchmarked and shipped.
-**The Pokémon Showdown capstone moves to `/Users/nickgreenquist/Documents/Projects/pokemon-showdown-rl`**,
-which starts without the no-RL-libraries rule — that constraint has no remaining payoff and the
-capstone goal is now simply the strongest agent achievable. See `start.md` in that repo for the
-bootstrap brief, the carry-over manifest, the distilled findings and a 7-step port verification.
-P6 was the last experiment run here.
+## BLOCKING GATE — no deletions yet
+
+`CAPSTONE_REMOVAL.md` must not delete anything until **`pokemon-showdown-rl` passes its port
+verification** (`MIGRATION.md` there, checks 1–8, each reproducing a recorded number).
+**Verified 2026-08-05: only check 2 is done; the editable install still resolves to this repo**
+(`import rl` → `deep-rl-from-scratch/rl/__init__.py`), so its precondition 3 has not run.
+The request handed to that repo is `PORT_VERIFICATION_HANDOFF.md` (delete there when reported).
+
+`runs/` (25 GB), `data/` (3.9 GB), `showdown/` and `logs/` are **gitignored — deletion is
+unrecoverable**. `prior_work/`, `assets/`, `DESIGN_P7.md` and all tier-3 edits are git-recoverable.
+
+## Open decisions — maintainer has not ruled
+
+1. **`CAPSTONE_REMOVAL.md` §4, the written record.** Keep-and-reframe (the removal doc's own
+   recommendation) vs the minimum-honesty strip vs deleting the `SESSION_LOGS.md` narrative.
+   Do not silently pick. Both defensible options leave `SESSION_LOGS.md`/`PLAN_ARCHIVE.md` intact.
+2. **The six P6 run dirs.** `runs/showdown_r512_12m_s{0,1,2}` + `runs/showdown_r512_lra12m_s{3,4,5}`
+   (~6 GB) back the 0.4607 headline and are **not in the new repo** — `MIGRATION.md` handed over
+   the numbers, not the artifacts. Copy before deleting, or decide explicitly to lose them.
 
 ## Next, in order
 
-1. **P6 finals + read** — run `p6_finals.sh` (1000 battles/seed, locked protocol) once all six
-   lanes exit, then `p6_read.py`. Both are staged in the session tmp dir. Do NOT run them while
-   training is live; they need the same server.
-2. **Decompose collect Showdown-side** — NOW TRIGGERED by the split. Re-run measurement (a)
-   (`scripts/showdown_throughput.py a`): it splits per-turn encode vs inference vs env gap but
-   last ran on the 10-dim PLACEHOLDER encoder, pre-dating the real 611-dim one (2026-07-30).
-   Script change, NOT a seam change — an encode timer must not go in shared code (`embed_battle`
-   is inside `ShowdownSingles`; a `hasattr` branch in `rl/train.py` is what the masking contract
-   bans).
-3. **`DESIGN_P7.md` — PROPOSED, awaiting team review; do NOT ratify before P6 reads.** The
-   BC-warm-start package (BC init + staged unfreeze + faint shaping + distributional value),
-   aimed where P4 measured the bottleneck. **§10 may dominate it: a verified 109,147-replay
-   `gen1randombattle` human corpus exists** — human demos are not bounded by the 0.489
-   SH-imitation ceiling that caps every other arm. Phase placement is the open question.
+1. **Wait for the port-verification report** from `pokemon-showdown-rl` (§5 of the handoff file
+   there): measured values per check, plus the P6-copy and `prior_work` diff results, plus one
+   explicit line authorizing the strip.
+2. **Resolve the two open decisions above.**
+3. **Execute `CAPSTONE_REMOVAL.md` §7 order:** tier-3 EDITS first (shared files — `rl/envs/make.py`,
+   `scripts/eval_checkpoint.py`, `scripts/watch.py`, `tests/test_selfplay_harness.py`,
+   `pyproject.toml`), then tier-1, then tier-2 deletions, then the doc decisions, then §6 verify.
+4. Delete `CAPSTONE_REMOVAL.md` and this gate section when done.
 
 ## Watch items
 
-- **CONCURRENT LANES MUST HAVE DISTINCT SEEDS (2026-08-04), across arms too.** Global `random`
-  is seeded by `cfg.seed` and poke-env builds usernames from it, so same-seed concurrent lanes
-  collide; the loser gets `|nametaken|`, surfacing as `TimeoutError: Agent is not challenging`
-  at first `reset`. Killed P6's whole annealed arm.
-- **Launcher hygiene (2026-08-04), three ways it has now lied:** SIGSEGV in torch lazy static
-  init kills a lane before any log or run dir (W=6: 5 of 6; not memory); the run dir is written
-  BEFORE the first `reset`, so `-d` is true for a lane that never trains; and unquoted `$VAR`
-  does not word-split in **zsh**, so shell loops must run under `bash`. **Stagger starts, assert
-  battle PROGRESS not artifacts, and verify complete histories before reporting done.**
-- s0 late regression pattern; P5b's s0 was also the weak seed (0.416) — watch seed spread.
-- Pre-existing test flake: `test_full_episode_contract_against_live_server` fails only when
-  the whole suite runs with a server up; passes alone (2026-08-01).
-- poke-env 0.15.0 upstream bug (SH setup branch dead); upstream report still unfiled.
-- `data/bc_p4_*.npz` ≈ 3.9 GB, gitignored — deletable; regen ~10 min.
+- **This tree must stay clean and unmodified in `rl/` until the gate clears** — `MIGRATION.md`'s
+  failure playbook diffs suspect files against it. Doc-only edits are safe; `rl/` edits are not.
+- **Keep the action-masking contract** through the removal. It is a genuine harness invariant,
+  exercised by Connect 4 and MinAtar, pinned by `tests/test_masking.py`.
+- **Do NOT delete** `rl/selfplay/`, `rl/common/masking.py`, `scripts/score_ladder.py`,
+  `scripts/pons_*.py`, or the selfplay / `eval_win_rate` / loop-split wiring in `rl/train.py` —
+  all Phase 4 Connect 4, all env-agnostic. `CAPSTONE_REMOVAL.md` §5.
+- Test baseline before removal: **288 passed** with `--ignore=tests/test_showdown_env.py`. After
+  removal the count drops; what matters is zero failures and that `test_harness.py` stays green.
+- Pre-existing flake, unrelated: `test_full_episode_contract_against_live_server` fails only in a
+  full-suite run with a server up; passes alone (2026-08-01). It is on the deletion list anyway.
+- Precondition 3 in the new repo removes this repo's editable install. Harmless — from this root
+  `./rl` wins on `sys.path`; re-confirm resolution before trusting a test result here.
 
 ## Operational
 
-- **Reference source on disk: `/Users/nickgreenquist/Documents/Projects/ps-ppo`** — full clone
-  of the strongest pure-policy Showdown agent (Gen 9, 14.5M-param transformer). Read the CODE
-  for encoder / action-space / reward / PPO-hparam questions; its README and Reddit thread
-  describe an older system and several public claims fail against it. Provenance, verified
-  numbers and two known defects: `prior_work/README.md`, ps-ppo entry — read that first.
-- Server: `cd showdown && node pokemon-showdown start --no-security` — now `simulator: 4`
-  (gitignored file; re-set it if the checkout is ever recreated).
-- wandb offline since `e53323a`; `runs/*/history.csv` via `extract_history.py`. Stage-0 for
-  concurrent seeds; ≥5-min runs in the maintainer's terminal; clean tree at every launch;
-  commit docs BEFORE launches; handed-over command sets go in bash scripts under session tmp.
-- Run artifacts: `runs/showdown_r512_lra_s{0,1,2}` (P5b), `runs/showdown_scratch12m_s*`,
-  clones `runs/bc_p4_512{,_40k}_s{0,1,2}`. `runs/showdown_tput_w*` are disposable.
+- Env: `/opt/anaconda3/envs/deep-rl` (Python 3.13). Never `base` or `pytorch_env`.
+- Showdown server still up on :8000 (PID 33842, `simulator: 4`) from P6 — the new repo's checks
+  4/6/7/8 need it, so leave it until they report. Stop it after.
+- wandb offline since `e53323a`; `runs/*/history.csv` via `scripts/extract_history.py`.
+- Git: commit only when asked; never commit and push in one command.
