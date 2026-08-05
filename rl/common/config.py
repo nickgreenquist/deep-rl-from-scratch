@@ -33,7 +33,7 @@ class Config:
     # Intra-op torch threads. 1 by default: per-step RL kernels are tiny, so
     # the default pool thrashes (5x+ measured slowdown), and one core per run
     # is what lets multi-seed benchmarks parallelize. Raise it when the nets
-    # and batches are big enough to amortize fork/join (capstone scale).
+    # and batches are big enough to amortize fork/join.
     torch_threads: int = 1
     # Self-play (Phase 4). `field(default_factory=dict)` and NOT `= {}`: a
     # mutable default is a ValueError at class-creation time, which would

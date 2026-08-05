@@ -1,7 +1,6 @@
 """Opponents for the learner-centric Connect 4 env.
 
-The `Opponent` interface has three methods, and each exists for a reason the
-capstone will need:
+The `Opponent` interface has three methods, and each exists for a reason:
 
 - `select(rng) -> Opponent` picks who actually plays this episode. A fixed
   opponent returns itself; the chunk-2 snapshot pool draws a member. Because
