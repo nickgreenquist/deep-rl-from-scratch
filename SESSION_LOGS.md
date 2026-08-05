@@ -1806,6 +1806,60 @@ order; earlier phases follow below.
   524-548 steps/s per lane, inside the R0 gate. **RESULT PENDING** — amend this entry when the
   finals land.
 
+- 2026-08-04 (latest: ACTION SPACE CLOSED as a lever; ps-ppo read at the source and it corrects
+  two claims this repo had recorded; the encoder fix we derived turns out to be what ps-ppo
+  already encodes) — **Full detail is in `prior_work/README.md` (ps-ppo entry, rewritten from the
+  code); this entry records only what changed and why.** The maintainer opened the action-space
+  question after the briefing's note that our 10-way positional space was "a fork taken
+  implicitly." Confirmed it was never chosen: `rl/envs/showdown.py:432` is
+  `self.action_space = self._env.action_space` — poke-env's `SinglesEnv` wholesale, `Discrete(10)`
+  = 6 switch + 4 move (pinned, `tests/test_showdown_env.py:79`). But the encoder was deliberately
+  slot-ALIGNED to it (`showdown.py:187`), which makes it a described-action space, not a naive one.
+  **CLOSED on external evidence: ps-ppo 14 (4 move + 6 switch + 4 tera-move) and Metamon 9 (4 move
+  + 5 switch, "the meaning of each action index varies by turn") are BOTH positional, and they are
+  the two strongest pure policies. Wang's 494-way identity space is the outlier, and his headline
+  needed MCTS.** Redesign would invalidate every in-repo comparison and buy Wang's benefit only at
+  Wang's data volume. Not the lever. Metamon also drops the always-illegal self-switch slot (5 vs
+  our 6) — cosmetic, the mask already handles it.
+  **THE ENCODER IS THE LIVE QUESTION, and two independent routes reached the same place.** Reading
+  `poke_env/player/baselines.py` against our `_fill_move` (MOVE_DIM 23) found our observation is
+  approximately the sufficient statistic for `SimpleHeuristicsPlayer` AND NOT MUCH MORE — which
+  makes the plateau legible, since RL sits at 0.443 and the BC clone at 0.453, both at the 0.5
+  mirror-match line. Missing vs SH's own inputs: **STAB** (`1.5 if m.type in active.types`,
+  `baselines.py:326` — we precompute the HARDER cross-block term, `move.type.damage_multiplier(foe)`,
+  and omit the easy one, which lives behind a dynamic "which of 6 team slots is active" lookup),
+  `move.boosts`/`target=="self"` (the setup rule), `expected_hits`, and `active.stats` (vs the
+  `base_stats` we encode). Hazard branches are dead in Gen 1. **Then the ps-ppo code turned out to
+  encode exactly these** — `stab_flag`, `expected_hits`, `self_boost_sum` (same `target` gate),
+  plus `status_prob` (secondary-effect chance), which our audit had filed under "beating SH needs
+  this." Inverse design worth noting: **they precompute NO type effectiveness at all** (zero hits
+  for `damage_multiplier`/`type_chart` in their tree) and let attention learn the chart, while we
+  precompute it and skip STAB.
+  **CORRECTIONS TO THE RECORD (both were recorded here before, both are now stronger/wrong).**
+  (1) **The ps-ppo ">85% vs SimpleHeuristicsPlayer" figure must not be used at all.** 2026-08-03
+  recorded it as "unreproducible (no eval script at HEAD)"; the truth is that **no script in all 49
+  commits ever evaluated against SH** — `eval.py` (deleted at `7fb522c`) ladders against HUMANS via
+  `ShowdownServerConfiguration` + `player.ladder(n)`. It is not comparable to any win rate here,
+  and it was wrongly quoted beside our 0.443 earlier in this session. (2) **Param count is
+  14,490,657, verified by instantiating the model** — our 14.5M was right and the author's "~55M"
+  on Reddit is wrong (embeddings are only 141k, so the obvious reconciliation fails too).
+  (3) The per-zone LR multipliers extracted 2026-08-03 as transferable (backbone 0.5×, value 2×)
+  are **dead code at HEAD**: the multiplier dict is keyed on `imitation/warmup/ppo/...` but the
+  default mode is `"ppo_with_jepa"`, so `.get(..., (1.0,1.0,1.0))` returns neutral.
+  **HEAD IS NOT THE PUBLISHED SYSTEM** — undisclosed JEPA auxiliary objective (1.58M params),
+  dynamic GAE lambda, and a KV-cache/`obs_transitions.py` temporal path that contradicts the
+  author's own "single snapshot, no non-Markovian modelling" statement. Anything cited from that
+  README or Reddit thread describes an earlier system. **Both remaining "MLP can't do it" claims
+  (Wang-replication ~1100 Elo; "an MLP, even with dedicated subnets, was unable to perfectly mimic
+  the bot") have NO code trace — no MLP exists anywhere in the history.** Anecdotes, and precisely
+  why the BC-clone diagnostic is worth running ourselves: it separates "MLP cannot compose" from
+  "MLP cannot represent even when handed the composition."
+  **Operational:** full ps-ppo clone now lives at `/Users/nickgreenquist/Documents/Projects/ps-ppo`
+  (machine-local, never committed); pointers added to STATUS "Operational" and a new
+  `prior_work/README.md` "Local code checkouts" section so a session finds it unprompted. The
+  Reddit thread is archived as a PDF in `prior_work/` since reddit.com is unfetchable from the
+  sandbox. No `rl/` source changed; 288 tests green; P6 unaffected and healthy throughout.
+
 - 2026-07-21 — Repo scaffolded: structure, README, CLAUDE.md, `.gitignore`, pinned `pyproject.toml`.
   Initial commit.
 - 2026-07-22 — Pushed to GitHub. Created `deep-rl` conda env; installed pinned deps and smoke-tested
