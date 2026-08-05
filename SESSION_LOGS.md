@@ -527,6 +527,28 @@ order; earlier phases follow below.
   Session boot ~30–40k → ~4k tokens; a `self-play` grep of this file 79 KB → 5 KB. Commits
   `8be35e4`/`6c7c9b8`/`793f9bf` + this entry; 316 tests green throughout. HANDOFF.md ritual
   unchanged.
+- 2026-08-05 (scope finalized — the project is COMPLETE) — **Scope closed at the from-scratch
+  spine: DQN, PPO and SAC on one shared harness, plus the Phase 4 Connect 4 self-play study.
+  Everything outside that scope was removed; the docs, configs and dependency set now describe
+  exactly what remains.** 49 files changed, 33 deleted. `pyproject.toml` lost a dependency, and
+  `rl/envs/make.py`, `rl/train.py`, `rl/common/masking.py`, `rl/envs/connect4.py`,
+  `scripts/watch.py`, `scripts/eval_checkpoint.py` and three test files were edited rather than
+  deleted, since the spine runs through them. **Kept deliberately** — `rl/selfplay/`,
+  `rl/common/masking.py`, `scripts/score_ladder.py`, `scripts/pons_*.py` and the selfplay /
+  `eval_win_rate` / loop-split wiring in `rl/train.py`: all Phase 4, all env-agnostic. The
+  action-masking contract stays a harness invariant, re-anchored on Connect 4 (a full column is
+  illegal) and still pinned by `tests/test_masking.py`.
+  **DEDICATED CONDA ENV (`deep-rl-from-scratch`), and it is not cosmetic.** This repo ships a
+  top-level package named `rl`; any other project in the same env that does the same collides,
+  the first `.pth` wins alphabetically, and the loser is imported **silently from the wrong
+  tree** — measured, after it happened. The env is now one-per-repo and `CLAUDE.md` records why.
+  Building it clean also **verified the dependency edit**, which nothing else could: the previous
+  env still had the removed package installed, so a surviving transitive import would not have
+  failed there. From-scratch install is 65 packages; **278 passed**; a CartPole run reproduces
+  `eval/return_mean 24.7` exactly, and `import rl` resolves correctly from a neutral directory.
+  Verification: zero-residue grep across all 165 tracked files; every doc-referenced in-repo path
+  resolves; `compileall` clean; no unused imports; all 62 configs parse to 13 env ids. Commits
+  `0c3b972`/`738f335`/`cfec564`/`fae22cf`, pushed. `test_harness.py` green, as it must stay.
 - 2026-07-21 — Repo scaffolded: structure, README, CLAUDE.md, `.gitignore`, pinned `pyproject.toml`.
   Initial commit.
 - 2026-07-22 — Pushed to GitHub. Created `deep-rl` conda env; installed pinned deps and smoke-tested
