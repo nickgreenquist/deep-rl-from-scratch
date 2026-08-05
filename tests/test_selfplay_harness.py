@@ -473,21 +473,6 @@ def test_init_from_refuses_lr_anneal(tmp_path, monkeypatch):
         train(cfg)
 
 
-def test_showdown_selfplay_rejects_fixed_mix():
-    """The pool's fixed anchors decode a Connect 4 board from the obs; on a
-    611-dim Showdown obs HeuristicOpponent crashes but RandomOpponent
-    silently plays uniform-random, unreported — so the combination must
-    refuse to construct. Fires before any env (or server) is touched."""
-    cfg = connect4_config(
-        env_id="Showdown-v0",
-        selfplay={"opponent": "self", "eval_opponent": "heuristics",
-                  "pool_size": 4, "latest_prob": 0.8,
-                  "push_every_updates": 1, "fixed_mix": 0.05},
-    )
-    with pytest.raises(ValueError, match="Connect4-only"):
-        train(cfg)
-
-
 def test_pool_mode_needs_a_vectorized_algorithm(tmp_path, monkeypatch):
     """Snapshots push at rollout boundaries; the scalar loop has none, and
     silently accepting would train against the frozen step-0 snapshot

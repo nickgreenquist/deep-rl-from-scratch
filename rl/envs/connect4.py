@@ -168,16 +168,9 @@ class Connect4Env(gym.Env):
     them, so the env must not emit a row that only one algorithm survives.
 
     `truncated` is always False: the game is bounded by 42 plies, so nothing
-    ever cuts an episode early. Phase 5 is the opposite — poke-env sets
-    `truncated=True` for forfeits, ties and timer losses — so the truncation
-    path is exercised here with a `TimeLimit` wrapper in the tests rather
-    than left dead until the capstone finds it.
-
-    Transferability note for Phase 5: what carries over is the LEARNER-FACING
-    contract (a 5-tuple, an opponent held as a plain policy object, a
-    per-episode opponent draw), not the opponent's location. poke-env's
-    `PokeEnv` is a two-seat PettingZoo `ParallelEnv` with no opponent
-    parameter; the opponent enters one level up via `SingleAgentWrapper`.
+    ever cuts an episode early. The truncation path is still exercised here
+    with a `TimeLimit` wrapper in the tests rather than left dead, since any
+    env with forfeits or timer losses would depend on it.
 
     RNG: one stream (`self.np_random`) has three consumers, in this fixed
     order per episode — the first-player flip, `opponent.select()`, then any

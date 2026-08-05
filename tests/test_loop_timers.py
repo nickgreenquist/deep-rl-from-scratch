@@ -1,10 +1,8 @@
 """Loop-split timers: collect / update / eval, on both train-loop paths.
 
-Motivating measurement (2026-08-04): `simulator: 4` bought ~29% collection-side
-but +3.7% end-to-end, so the Showdown loop is update-and-encode bound rather
-than collection bound. `time/steps_per_sec` cannot distinguish those; these
-three keys can. Env-agnostic by construction — nothing here knows about
-Showdown, and CartPole is the pin.
+`time/steps_per_sec` alone cannot say whether a slow run is collection-bound
+or update-bound; these three keys can. Env-agnostic by construction, with
+CartPole as the pin.
 
 The load-bearing assertion is the wall-clock bound: an accumulator that is
 never reset, or one that double-counts a step, produces a per-flush total

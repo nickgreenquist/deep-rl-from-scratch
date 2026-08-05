@@ -1,18 +1,10 @@
 # CLAUDE.md
 
-> **⚠ 2026-08-05 — THE CAPSTONE HAS MOVED.** The Pokémon Showdown work relocated to
-> `/Users/nickgreenquist/Documents/Projects/pokemon-showdown-rl`. This repo is being reverted to
-> its original scope: from-scratch DQN, PPO and SAC on a shared harness. **Everything below about
-> the capstone, poke-env, the Showdown server, and the no-RL-libraries rule as it applies to the
-> capstone is HISTORICAL.** The removal is specified in `CAPSTONE_REMOVAL.md`, which is
-> authoritative where it conflicts with this file. Until that removal runs, this document still
-> describes the tree as it exists.
-
 Guide for Claude Code sessions on this repo. At session start read `HANDOFF.md` if non-empty, then `STATUS.md` — that is the only mandatory read; everything else is on demand per "Plan and status" below.
 
 ## What this project is
 
-From-scratch deep RL in PyTorch, built as a portfolio piece over multiple months at ~10 hrs/week. Spine: DQN → PPO → SAC on a shared harness, benchmarked apples-to-apples, each phase independently shippable. Capstone (**decided**): Pokémon Showdown Gen 1 singles battling — battle phase only, no teambuilding — format `gen1randombattle`, via poke-env against a local Node.js Showdown server; hero algorithm is the Phase 2 PPO with self-play. Between SAC and the capstone sits **Phase 4, a Connect 4 self-play on-ramp** (added 2026-07-25): the self-play loop, checkpoint pool and Elo harness are built and validated there, PPO-only and deliberately without MCTS, because tree search needs a forward model the capstone will not have. Capstone-specific **code** stays deferred until Phase 4 is complete: no poke-env dependency, no battle logic, no Pokémon observation encoders during Phases 2–4. (Harness-level contracts the capstone needs — e.g. action masking — may land earlier; they must be env-agnostic and provable no-ops on the spine envs.)
+From-scratch deep RL in PyTorch, built as a portfolio piece over multiple months at ~10 hrs/week. DQN → PPO → SAC on a shared harness, benchmarked apples-to-apples, each phase independently shippable. **Phase 4 closes the suite with a Connect 4 self-play on-ramp** (added 2026-07-25): the self-play loop, checkpoint pool and Elo harness, PPO-only and deliberately without MCTS, since tree search needs a forward model many interesting environments do not provide. The project is complete: all five phases are implemented, benchmarked and written up.
 
 ## Hard rules
 
@@ -20,7 +12,7 @@ From-scratch deep RL in PyTorch, built as a portfolio piece over multiple months
 - **Plan before editing.** State which files you'll create/change and why; wait for a go-ahead. Keep diffs clean and reviewable.
 - **Small, single-purpose commits.** End every session at a green, committable state.
 - **Minimal dependencies.** Stdlib where possible; config is a dataclass + YAML, no experiment frameworks. Pin versions in `pyproject.toml`.
-- **CPU by default.** A device override flag exists, but do not rely on MPS — it's flaky for this workload. No phase assumes a GPU: capstone online self-play is expected CPU/core-bound (see PLAN.md's Phase 5 hardware note, revised 2026-07-28); a rented cloud GPU enters only for an offline supervised arm (the BC diagnostic) or the Procgen fallback.
+- **CPU by default.** A device override flag exists, but do not rely on MPS — it's flaky for this workload. No phase assumes a GPU.
 - **This repo may go public.** Keep personal details (employer, etc.) out of committed files.
 
 ## Development environment
@@ -34,7 +26,7 @@ From-scratch deep RL in PyTorch, built as a portfolio piece over multiple months
 
 - Two tracks are first-class: discrete (DQN vs PPO) and continuous (PPO vs SAC). Never hardcode discrete-action assumptions in shared code.
 - Agent interface (`rl/agents/base.py`): `act(obs, action_mask=None, deterministic=False) -> action`, `update(batch) -> dict[str, float]`. DQN, PPO, and SAC must all fit it without contortions.
-- Action masking is a harness contract (capstone: legal actions change every turn): Discrete-action envs always emit `info["action_mask"]` — all-True via the `ActionMask` wrapper when nothing is illegal — and algorithms mask logits/Q through `rl/common/masking` (finite `-1e8` sentinel, never `-inf`; masked path always exercised, no `mask is None` branches in algorithm code). The value head is never masked; masking applies at eval time too.
+- Action masking is a harness contract (Connect 4: a full column is illegal): Discrete-action envs always emit `info["action_mask"]` — all-True via the `ActionMask` wrapper when nothing is illegal — and algorithms mask logits/Q through `rl/common/masking` (finite `-1e8` sentinel, never `-inf`; masked path always exercised, no `mask is None` branches in algorithm code). The value head is never masked; masking applies at eval time too.
 - Single entry point: `python -m rl.train --config configs/<run>.yaml`. Every algorithm plugs into it.
 - Logging: W&B is the default backend, TensorBoard behind a flag as the offline fallback, both wrapped by a thin logger interface. No W&B calls in algorithm code.
 - **Locked metric names** — reuse these exactly in every algorithm: `rollout/episode_return`, `rollout/episode_length`, `eval/return_mean`, `eval/return_std`, `time/steps_per_sec`, `time/collect_sec`, `time/update_sec`, `time/eval_sec`, `eval/win_rate`, plus `loss/*` for per-algorithm losses and `selfplay/*` for opponent-pool diagnostics (Phase 4+; logged from `rl/train.py`, never from algorithm or pool code). `eval/win_rate` is the fraction of eval episodes the agent **won**, counted from an env-supplied `info["outcome"] ∈ {-1, 0, +1}` and **never from the sign of the return** — a reward-sign inversion would otherwise report 100% and pass its own detector (measured). Emitted only when `eval_win_rate` is set, so every pre-Phase-4 config and run is untouched.
@@ -49,7 +41,7 @@ Session start, in this order — stop as soon as you can act:
 
 1. `HANDOFF.md` — only if non-empty (mid-handoff). A continuation note for a session resuming after a context clear: read it, fold anything durable into STATUS.md / SESSION_LOGS.md, restore the empty stub. Written only when the maintainer explicitly asks for a handoff. Nothing persists there.
 2. `STATUS.md` — always. Current phase/milestone, last verdict with numbers, next actions in order, watch items, operational commands. Rewritten in place (never appended), hard cap ~80 lines; update it in the same commit that appends a session-log entry. If it conflicts with the newest session-log entry, the log wins — say so and fix STATUS.md.
-3. `PLAN.md` — the live spec: benchmark protocol, per-phase digests of completed work ("Built" / "What still binds"), and the full Phase 5 spec. Read the Phase 5 section when doing capstone design work. Update it as design decisions land. Never read any doc whole "for context."
+3. `PLAN.md` — the spec: benchmark protocol and per-phase digests of completed work ("Built" / "What still binds"). Never read any doc whole "for context."
 4. `SESSION_LOGS.md` — dated entries (findings, decisions, run records); append as work lands. Access pattern: `grep -n '^- 20' SESSION_LOGS.md` for the index of entry titles, then Read the chosen entry by offset/limit. Never a broad keyword grep — a term like "self-play" returns tens of KB.
 5. `PLAN_ARCHIVE.md` — Phases 0–4 locked specs, moved verbatim, frozen. Grep it when touching that phase's code or before re-opening any locked decision; never read whole. Any "see PLAN.md" reference to a Phase 0–4 spec resolves here.
 

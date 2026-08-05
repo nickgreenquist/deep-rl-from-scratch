@@ -524,9 +524,9 @@ def test_both_seats_occur_and_are_roughly_balanced():
 
 
 def test_truncation_path_is_exercised_by_a_time_limit():
-    """truncated is always False on this env, so the path is dead here — and
-    load-bearing in Phase 5, where poke-env sets truncated for forfeits, ties
-    and timer losses. Force it with TimeLimit so the plumbing is proven."""
+    """truncated is always False on this env, so the path is dead here — but
+    load-bearing for any env with forfeits, ties or timer losses. Force it
+    with TimeLimit so the plumbing is proven."""
     env = gym.wrappers.TimeLimit(Connect4Env(opponent="random"), max_episode_steps=2)
     obs, info = env.reset(seed=0)
     for step in range(2):

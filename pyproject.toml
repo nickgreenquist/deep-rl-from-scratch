@@ -28,10 +28,6 @@ dependencies = [
     # published PPO anchors we compare against were produced on v4 envs under
     # mujoco<=2.3.3, which is one reason those anchors are directional only.
     "mujoco==3.10.0",
-    # Phase 5 capstone env driver (Pokémon Showdown Gen 1). Not an RL library —
-    # it is a battle-protocol client/env layer; agents and training stay ours.
-    # Requires a local Node.js Showdown server: scripts/setup_showdown.sh.
-    "poke-env==0.15.0",
 ]
 
 [project.optional-dependencies]

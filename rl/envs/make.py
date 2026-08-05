@@ -31,8 +31,6 @@ def make_env(
         _ensure_minatar_registered()
     elif env_id.startswith("Connect4"):
         _ensure_connect4_registered()
-    elif env_id.startswith("Showdown"):
-        _ensure_showdown_registered()
     env = gym.make(env_id, render_mode=render_mode, **(env_kwargs or {}))
     if isinstance(env.action_space, gym.spaces.Discrete):
         # Masking contract: every Discrete-action env emits info["action_mask"]
@@ -118,8 +116,8 @@ def make_eval_env(
     record,eval_checkpoint}.py — so that none of them can silently evaluate
     a self-play run against the env's DEFAULT opponent instead of the
     configured anchor. `extra_env_kwargs` merge over the config-derived ones
-    for eval-site extras (e.g. Showdown replay saving in watch.py); the
-    opponent keys come from the config and may not be overridden."""
+    for eval-site extras; the opponent keys come from the config and may not
+    be overridden."""
     env_kwargs = selfplay_env_kwargs(cfg, "eval_opponent")
     if extra_env_kwargs:
         overlap = extra_env_kwargs.keys() & env_kwargs.keys()
@@ -138,13 +136,6 @@ def _ensure_connect4_registered() -> None:
     # stays free of side effects — the same shape as the MinAtar branch.
     if "Connect4-v0" not in gym.registry:
         gym.register(id="Connect4-v0", entry_point="rl.envs.connect4:Connect4Env")
-
-
-def _ensure_showdown_registered() -> None:
-    # Registered here like Connect4; the entry-point string also defers the
-    # poke_env import to first use, so every other env pays nothing for it.
-    if "Showdown-v0" not in gym.registry:
-        gym.register(id="Showdown-v0", entry_point="rl.envs.showdown:ShowdownEnv")
 
 
 def _ensure_minatar_registered() -> None:

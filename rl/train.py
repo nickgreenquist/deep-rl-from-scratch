@@ -175,17 +175,6 @@ def train(cfg: Config) -> None:
         push_every = cfg.selfplay["push_every_updates"]
         if push_every < 1:
             raise ValueError(f"push_every_updates must be >= 1, got {push_every}")
-        if cfg.env_id.startswith("Showdown") and cfg.selfplay.get("fixed_mix", 0.0) > 0.0:
-            # The pool's fixed anchors are Connect 4 Opponents that read a
-            # board out of the obs. On a 611-dim Showdown obs HeuristicOpponent
-            # crashes but RandomOpponent silently plays a legal uniform-random
-            # move, unreported (measured) — half the fixed draws would corrupt
-            # the run without an error. Showdown anchor bots need the battle
-            # object and so must enter at the Player level if ever wanted.
-            raise ValueError(
-                "fixed_mix > 0 is Connect4-only: the pool's fixed anchors "
-                "decode a board from the obs and cannot drive a Showdown battle"
-            )
         pool = SnapshotPool(
             cfg.selfplay["pool_size"], cfg.selfplay["latest_prob"],
             pfsp_power=cfg.selfplay.get("pfsp_power", 0.0),

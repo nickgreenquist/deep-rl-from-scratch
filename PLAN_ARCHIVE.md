@@ -81,8 +81,8 @@ are in hand) for the README and posts. Explicitly rejected: HUD overlays in the 
 ## Phase 2 — PPO (both tracks)
 
 GAE, clipped surrogate objective, entropy bonus, vectorized rollouts (the env-factory seam becomes
-real here). Runs discrete *and* continuous — the bridge between the two tracks and the likely
-capstone engine. `gymnasium[mujoco]` + `mujoco==3.10.0` pinned 2026-07-26 at the continuous track's
+real here). Runs discrete *and* continuous — the bridge between the two tracks.
+`gymnasium[mujoco]` + `mujoco==3.10.0` pinned 2026-07-26 at the continuous track's
 start. Reference: "The 37 Implementation Details of Proximal Policy Optimization".
 
 On-ramp (decided 2026-07-25: **yes** — maintainer wants sub-deliverables maximized, for learning and
@@ -778,15 +778,15 @@ coherent recipes is how MinAtar got mis-tuned).
 ## Phase 4 — self-play on-ramp: Connect 4 (added 2026-07-25; spec LOCKED 2026-07-26 after three-lens review)
 
 Goal: build and validate the self-play machinery in isolation, on an environment where a run takes
-minutes and a ground-truth oracle exists, before the Pokémon domain adds partial observability,
-stochasticity, long horizons and an external Node server on top of it. Same on-ramp discipline as
-linear-Q before DQN and REINFORCE before PPO: meet one new mechanism at a time. Self-play is the
-single genuinely new *mechanism* in the capstone; everything else there is domain.
+minutes and a ground-truth oracle exists, before partial observability, stochasticity, long
+horizons or an external simulator are layered on top. Same on-ramp discipline as linear-Q before
+DQN and REINFORCE before PPO: meet one new mechanism at a time. Self-play is the mechanism;
+everything else is domain.
 
 **Hard constraint — PPO only, no MCTS.** The literature's default for Connect 4 is AlphaZero, and
 following it would build MCTS, search-derived policy targets and Dirichlet root noise, **none of
-which transfers**: tree search needs a forward model, and Showdown gives us none (Huang & Lee chose
-policy optimization for exactly this reason — see Phase 5). **A mediocre Connect 4 agent is a
+which transfers**: tree search needs a forward model, which many interesting environments do not
+provide (Huang & Lee chose policy optimization for exactly this reason). **A mediocre Connect 4 agent is a
 success.** The deliverable is the self-play loop and the Elo harness, not playing strength — written
 down because otherwise a weak agent reads as a bug and we repeat the chunk-4 afternoon spent proving
 a mis-tuned lr wasn't one.
@@ -825,7 +825,7 @@ CLAUDE.md's carve-out on the no-RL-libraries rule.
   never resolve to a pool member. Published support: Metamon (RLJ 2025, arXiv:2504.04395 §5.3) let
   SynRL-V1 battle recent checkpoints of itself, got a model "significantly better against itself"
   that gave "inconsistent improvement against real players" — "battle replays make it clear that the
-  model believes it is playing SynRL-V1" — in Gen 1 OU, the capstone's exact setting.
+  model believes it is playing SynRL-V1".
 - **Connect 4 is a first-player win under perfect play**, so win rate against a perfect player is
   degenerate (0% as P2 forever regardless of skill). Absolute strength comes from the position
   benchmark, never from a match against the solver.
@@ -841,9 +841,9 @@ CLAUDE.md's carve-out on the no-RL-libraries rule.
   sampled opponent moves and entropy bonus are the substitute noise source Tesauro prescribes, so
   **a null result is a claim about those mitigations as much as about the game's transitivity.** The
   old "PLAN.md records that Connect 4 is near-transitive" claim is retired — it was never sourced
-  and the one paper that measured it disagrees. Whatever Phase 4 finds does **not** transfer to
-  Phase 5 by default: Gen 1 Showdown is simultaneous-move *and* imperfect-information, i.e. exactly
-  the class OpenAI Five carves out.
+  and the one paper that measured it disagrees. Whatever Phase 4 finds does **not** transfer by
+  default to simultaneous-move, imperfect-information games — exactly the class OpenAI Five
+  carves out.
 - **PPO's hyperparameters do not port.** ~10.6 learner steps per episode (mean game 21.25 plies,
   measured over 20k random games) against MinAtar's thousands, and a terminal-only ±1 reward.
 - Strength: beats `random` ≫90%, beats `heuristic`, roughly competitive with `alphabeta2`, loses to
@@ -890,7 +890,7 @@ that `agent.state_dict()` **aliases live tensors**, so a pool of state_dicts wou
 to the training weights and every "frozen" opponent would silently track the learner (the Phase-3
 `log_alpha` rebind failure class). Cost 0.9 ms, ~1.03 MB each (~2/3 dead optimizer state), ~20.6 MB
 at `pool_size: 20` — accepted waste. `.eval()` + `requires_grad_(False)` on push (currently a no-op
-— zero buffers, no Dropout/BatchNorm — kept as the contract the capstone needs). **Two distinct swap
+— zero buffers, no Dropout/BatchNorm — kept as the standing contract). **Two distinct swap
 boundaries**: which member plays is drawn **per episode** at reset (an opponent changing mid-game is
 incoherent), while new snapshots enter the pool **only at a rollout boundary**, after the `update()`
 that drains the buffer — so within a rollout the env is a *stochastic* env with a fixed opponent
@@ -1104,11 +1104,11 @@ campaign config** (no DQN-parity cost here: Phase 4 has no DQN comparison).
 - [x] `eval/win_rate` added to the locked metric names in CLAUDE.md — landed with the lock, together
   with the `selfplay/*` namespace and the open_spiel carve-out.
 
-**What this deliberately does NOT de-risk** (budget separately): the async multi-battle collection
-layer — our `SyncVectorEnv` of N in-process copies does not map onto poke-env's
-asyncio-over-websockets to a single Node server, and that is the largest remaining capstone piece;
-long horizons (≤42 plies vs Gen 1's >100 turns, so γ/λ/rollout length all need re-tuning); partial
-observability; reward shaping; and eval-variance budgeting. Connect 4 is also, per Czarnecki et al.,
+**What this deliberately does NOT de-risk** (budget separately): async collection against an
+out-of-process simulator — a `SyncVectorEnv` of N in-process copies does not map onto
+asyncio-over-websockets to a single external server; long horizons (≤42 plies, so γ/λ/rollout
+length would all need re-tuning elsewhere); partial observability; reward shaping; and
+eval-variance budgeting. Connect 4 is also, per Czarnecki et al.,
 cyclic mainly in its mid-strength band, so the cycling detector gets built and only partially
 exercised.
 

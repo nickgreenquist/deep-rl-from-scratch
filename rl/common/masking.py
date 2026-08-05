@@ -1,9 +1,8 @@
 """Action masking: the harness-wide contract for envs whose legal actions
-change per state — the capstone's whole action model (Pokémon Showdown:
-fainted Pokémon can't be switched to, moves run out of PP, forced switches).
-The spine envs have no illegal actions, so their wrapper emits an all-True
-mask and the masked code path is exercised everywhere from day one — never
-special-cased, and provably a no-op where nothing is illegal.
+change per state — Connect 4 cannot play into a full column. Most spine envs
+have no illegal actions, so their wrapper emits an all-True mask and the
+masked code path is exercised everywhere from day one — never special-cased,
+and provably a no-op where nothing is illegal.
 
 The contract:
 
