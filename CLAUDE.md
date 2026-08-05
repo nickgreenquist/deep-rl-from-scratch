@@ -1,5 +1,13 @@
 # CLAUDE.md
 
+> **⚠ 2026-08-05 — THE CAPSTONE HAS MOVED.** The Pokémon Showdown work relocated to
+> `/Users/nickgreenquist/Documents/Projects/pokemon-showdown-rl`. This repo is being reverted to
+> its original scope: from-scratch DQN, PPO and SAC on a shared harness. **Everything below about
+> the capstone, poke-env, the Showdown server, and the no-RL-libraries rule as it applies to the
+> capstone is HISTORICAL.** The removal is specified in `CAPSTONE_REMOVAL.md`, which is
+> authoritative where it conflicts with this file. Until that removal runs, this document still
+> describes the tree as it exists.
+
 Guide for Claude Code sessions on this repo. At session start read `HANDOFF.md` if non-empty, then `STATUS.md` — that is the only mandatory read; everything else is on demand per "Plan and status" below.
 
 ## What this project is
